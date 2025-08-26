@@ -1,0 +1,1 @@
+export default function About() { return <div className='section'>About Page</div> }
