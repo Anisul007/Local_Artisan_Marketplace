@@ -3,8 +3,10 @@ import { useAuth } from "./context/AuthContext";
 
 import Home from "./pages/Home";
 import About from "./pages/About";
+import BlogPage from "./pages/Blog"; 
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForMakersPage from "./pages/ForMakers";
 import ForgotPassword from "./pages/ForgotPassword";
 
 import NavBar from "./layout/NavBar";
@@ -33,6 +35,10 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot" element={<ForgotPassword />} />
+        <Route path="/blog" element={<BlogPage />} />
+        <Route path="/for-makers" element={<ForMakersPage />} />
+
+        
 
         {/* vendor-only */}
         <Route

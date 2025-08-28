@@ -50,7 +50,7 @@ export default function NavBar() {
       {/* Center: links */}
       <nav className="nav-links">
         {["Home", "About", "Shop Handmade", "For Makers", "Blog", "Contact"].map((label, i) => {
-          const href = ["/", "/about", "/services", "/makers", "/blog", "/contact"][i];
+          const href = ["/", "/about", "/services", "/for-makers", "/blog", "/contact"][i];
           return (
             <a key={label} href={href} className="nav-pill">
               {label}

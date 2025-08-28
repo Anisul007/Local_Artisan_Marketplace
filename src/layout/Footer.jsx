@@ -9,7 +9,7 @@ export default function Footer() {
           <img
             src="/images/footer-logo.png"
             alt="Artisan Avenue"
-            className="h-10 mb-4"
+             className="h-20 w-auto mx-auto" 
           />
           <p className="text-sm leading-6">
             Curated marketplace for Australian makers. Thoughtfully made,
@@ -51,10 +51,17 @@ export default function Footer() {
               Subscribe
             </button>
           </form>
-          <div className="flex gap-4 mt-4 text-xl">
-            <a href="#" aria-label="Instagram" className="hover:text-white">📷</a>
-            <a href="#" aria-label="Facebook"  className="hover:text-white">📘</a>
-            <a href="#" aria-label="Pinterest" className="hover:text-white">📌</a>
+          {/* Social Icons */}
+          <div className="flex gap-4 mt-4">
+            <a href="https://instagram.com" target="_blank" aria-label="Instagram">
+              <img src="/images/instagram.png" alt="Instagram" className="w-6 h-6 hover:opacity-80" />
+            </a>
+            <a href="https://facebook.com" target="_blank" aria-label="Facebook">
+              <img src="/images/facebook.png" alt="Facebook" className="w-6 h-6 hover:opacity-80" />
+            </a>
+            <a href="https://twitter.com" target="_blank" aria-label="Twitter">
+              <img src="/images/twitter.svg" alt="Twitter" className="w-6 h-6 hover:opacity-80" />
+            </a>
           </div>
         </div>
       </div>
