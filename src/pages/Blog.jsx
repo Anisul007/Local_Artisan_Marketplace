@@ -282,7 +282,7 @@ export default function BlogPage() {
       {/* Hero */}
       <section className="relative">
         <img
-          src="/images/blog/hero.jpg"
+          src="/images/blog/blog-bg.jpg"
           alt="Artisan Avenue Blog"
           className="absolute inset-0 w-full h-full object-cover opacity-30"
         />
