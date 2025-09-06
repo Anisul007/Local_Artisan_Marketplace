@@ -38,3 +38,20 @@ export async function apiDelete(path) {
   const data = await res.json().catch(() => ({}));
   return { ok: res.ok, status: res.status, data };
 }
+
+// ----------------- NEW AUTH HELPERS -----------------
+export const AuthAPI = {
+  login: (body) => apiPost("/api/auth/login", body),
+  register: (body) => apiPost("/api/auth/register", body),
+  me: () => apiGet("/api/auth/me"),
+  logout: () => apiPost("/api/auth/logout"),
+
+  // Email verification endpoints
+  verifyEmail: (body) => apiPost("/api/auth/verify-email", body),
+  resendVerify: (body) => apiPost("/api/auth/verify-email/resend", body),
+
+  // Forgot password flow (reuse existing backend endpoints if needed)
+  forgotStart: (body) => apiPost("/api/auth/forgot/start", body),
+  forgotVerify: (body) => apiPost("/api/auth/forgot/verify", body),
+  forgotReset: (body) => apiPost("/api/auth/forgot/reset", body),
+};

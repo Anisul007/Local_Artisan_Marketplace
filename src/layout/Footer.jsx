@@ -54,13 +54,13 @@ export default function Footer() {
           {/* Social Icons */}
           <div className="flex gap-4 mt-4">
             <a href="https://instagram.com" target="_blank" aria-label="Instagram">
-              <img src="/images/instagram.png" alt="Instagram" className="w-6 h-6 hover:opacity-80" />
+              <img src="/images/instagram.png" alt="Instagram" className="w-8 h-8 hover:opacity-80 rounded-lg" />
             </a>
             <a href="https://facebook.com" target="_blank" aria-label="Facebook">
-              <img src="/images/facebook.png" alt="Facebook" className="w-6 h-6 hover:opacity-80" />
+              <img src="/images/facebook.png" alt="Facebook" className="w-8 h-8 hover:opacity-80 rounded-lg"  />
             </a>
-            <a href="https://twitter.com" target="_blank" aria-label="Twitter">
-              <img src="/images/twitter.svg" alt="Twitter" className="w-6 h-6 hover:opacity-80" />
+            <a href="https://pinterest.com" target="_blank" aria-label="Pinterest">
+              <img src="/images/pinterest.png" alt="Pinterest" className="w-8 h-8 hover:opacity-80 rounded-lg"  />
             </a>
           </div>
         </div>

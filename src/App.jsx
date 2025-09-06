@@ -3,11 +3,14 @@ import { useAuth } from "./context/AuthContext";
 
 import Home from "./pages/Home";
 import About from "./pages/About";
-import BlogPage from "./pages/Blog"; 
+import BlogPage from "./pages/Blog";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ForMakersPage from "./pages/ForMakers";
 import ForgotPassword from "./pages/ForgotPassword";
+import VerifyEmail from "./pages/VerifyEmail"; 
+import Contact from "./pages/Contact";
+import ShopHandmade from "./pages/ShopHandmade";
 
 import NavBar from "./layout/NavBar";
 import Footer from "./layout/Footer.jsx";
@@ -35,10 +38,11 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/forgot" element={<ForgotPassword />} />
+        <Route path="/verify-email" element={<VerifyEmail />} /> 
         <Route path="/blog" element={<BlogPage />} />
         <Route path="/for-makers" element={<ForMakersPage />} />
-
-        
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/shop" element={<ShopHandmade />} />
 
         {/* vendor-only */}
         <Route

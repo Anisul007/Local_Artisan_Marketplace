@@ -9,7 +9,7 @@ import { sendMail } from "../utils/email.js";
 
 const router = express.Router();
 
-/* ------------------------ Auth helpers (reset token) ----------------------- */
+/* ----------------------------- Helpers ----------------------------- */
 function signResetToken(payload) {
   const secret = process.env.RESET_JWT_SECRET || process.env.JWT_SECRET;
   return jwt.sign(payload, secret, { expiresIn: "15m" });
@@ -18,8 +18,21 @@ function verifyResetToken(token) {
   const secret = process.env.RESET_JWT_SECRET || process.env.JWT_SECRET;
   return jwt.verify(token, secret);
 }
+function normalizeEmail(e = "") {
+  return (e || "").toLowerCase().trim();
+}
 
-/* -------------------------------- REGISTER -------------------------------- */
+// Alphanumeric **UPPERCASE** OTP (for both verify + reset)
+function generateOTP(length = 6) {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let otp = "";
+  for (let i = 0; i < length; i++) {
+    otp += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return otp;
+}
+
+/* -------------------------------- REGISTER (with email OTP) -------------------------------- */
 router.post("/register", async (req, res) => {
   try {
     const body = req.body || {};
@@ -30,7 +43,7 @@ router.post("/register", async (req, res) => {
 
     const firstName = (body.firstName || "").trim();
     const lastName  = (body.lastName || "").trim();
-    const email     = (body.email || "").toLowerCase().trim();
+    const email     = normalizeEmail(body.email);
     const username  = (body.username || "").trim() || undefined;
     const address   = (body.address || "").trim();
 
@@ -41,7 +54,7 @@ router.post("/register", async (req, res) => {
     if (exists) return sendErr(res, 409, ERR.EMAIL_TAKEN, "email already registered");
 
     const password = body.password ?? "";
-    const confirm  = body.confirm ?? "";
+    const confirm  = body.confirm ?? body.confirmPassword ?? "";
     if (!passwordStrong(password)) return sendErr(res, 400, ERR.PASSWORD_WEAK, "weak password");
     if (password !== confirm) return sendErr(res, 400, ERR.PASSWORD_MISMATCH, "passwords do not match");
 
@@ -54,31 +67,65 @@ router.post("/register", async (req, res) => {
       email,
       username,
       passwordHash,
-      address
+      address,
+      isVerified: false,
     };
 
     if (role === "customer") {
-      if (!body.dob) return sendErr(res, 400, ERR.REQUIRED, "dob required");
-      doc.dob = new Date(body.dob);
+      const dob = body.dob ?? body.dateOfBirth;
+      if (!dob) return sendErr(res, 400, ERR.REQUIRED, "dob required");
+      doc.dob = new Date(dob);
     } else {
-      const businessName   = (body.businessName || "").trim();
-      const phone          = (body.phone || "").trim();
-      const website        = (body.website || "").trim();
-      const description    = (body.description || "").trim();
-      const primaryCategory= (body.primaryCategory || "").trim();
+      const businessName = (body.businessName || "").trim();
+      const phone        = (body.phone || "").trim();
+      const website      = (body.website || "").trim();
+      const description  = (body.description || "").trim();
 
-      if (!businessName || !description || !primaryCategory)
+      // NEW: accept multi-select primaryCategories; fall back to legacy primaryCategory
+      let primaryCategories = Array.isArray(body.primaryCategories)
+        ? body.primaryCategories
+            .map((s) => String(s || "").trim())
+            .filter(Boolean)
+        : [];
+
+      if (primaryCategories.length === 0) {
+        const single = (body.primaryCategory || "").trim();
+        if (single) primaryCategories = [single];
+      }
+
+      if (!businessName || !description || primaryCategories.length === 0)
         return sendErr(res, 400, ERR.REQUIRED, "vendor fields required");
 
       if (!phone || !isAuPhone(phone))
         return sendErr(res, 400, ERR.INVALID_PHONE_AU, "invalid AU phone");
 
-      doc.vendor = { businessName, phone, website, description, primaryCategory };
+      doc.vendor = { businessName, phone, website, description, primaryCategories };
     }
 
+    // Create user (unverified)
     const user = await User.create(doc);
-    setAuthCookie(res, user.safe());
-    return res.status(201).json({ ok: true, user: user.safe() });
+
+    // Generate & store **UPPERCASE alphanumeric** OTP (hashed) with 10 min expiry
+    const code = generateOTP(6); // e.g. "AB3XZ7"
+    user.verifyCodeHash = await bcrypt.hash(code, 10);
+    user.verifyCodeExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    user.lastVerifyEmailAt = new Date();
+    await user.save();
+
+    // Email the OTP via SMTP creds from .env
+    await sendMail({
+      to: user.email,
+      subject: "Verify your Artisan Avenue account",
+      text: `Your verification code is: ${code}\nThis code expires in 10 minutes.`,
+      html: `
+        <p>Use this code to verify your email:</p>
+        <p style="font-size:24px;font-weight:bold;letter-spacing:3px">${code}</p>
+        <p>This code expires in <b>10 minutes</b>.</p>
+      `,
+    });
+
+    // Do NOT set auth cookie yet; wait for verification
+    return res.status(200).json({ ok: true, message: "Verification code sent to email." });
   } catch (err) {
     if (err?.code === 11000) {
       return sendErr(res, 409, ERR.EMAIL_TAKEN, "email already registered");
@@ -88,12 +135,106 @@ router.post("/register", async (req, res) => {
   }
 });
 
+/* --------------------------------- VERIFY EMAIL ---------------------------------- */
+router.post("/verify-email", async (req, res) => {
+  try {
+    const { email, code } = req.body || {};
+    if (!email || !code) return sendErr(res, 400, ERR.REQUIRED, "email/code required");
+
+    const user = await User.findOne({ email: normalizeEmail(email) });
+    if (!user) return sendErr(res, 400, "ERR_NO_USER", "user not found");
+    if (user.isVerified) {
+      setAuthCookie(res, user.safe());
+      return res.json({ ok: true, user: user.safe() });
+    }
+
+    if (!user.verifyCodeHash || !user.verifyCodeExpires || user.verifyCodeExpires < new Date()) {
+      user.verifyCodeHash = undefined;
+      user.verifyCodeExpires = undefined;
+      await user.save();
+      return sendErr(res, 400, "ERR_CODE_EXPIRED", "code expired");
+    }
+
+    // Compare with **UPPERCASE** version of code (we stored uppercase)
+    const input = String(code || "").trim().toUpperCase();
+    const ok = await bcrypt.compare(input, user.verifyCodeHash);
+    if (!ok) return sendErr(res, 400, "ERR_CODE_INCORRECT", "incorrect code");
+
+    // Success → mark verified & clear code, then sign-in
+    user.isVerified = true;
+    user.verifyCodeHash = undefined;
+    user.verifyCodeExpires = undefined;
+    await user.save();
+
+    // Send confirmation email
+    try {
+      await sendMail({
+        to: user.email,
+        subject: "Welcome to Artisan Avenue – Registration Confirmed",
+        text: `Hi ${user.firstName}, your email has been verified successfully. Welcome aboard!`,
+        html: `
+          <p>Hi ${user.firstName},</p>
+          <p>Your email has been verified successfully. 🎉</p>
+          <p>Welcome to <b>Artisan Avenue</b>!</p>
+        `,
+      });
+    } catch (e) {
+      // non-fatal
+      console.warn("verify-email confirmation mail failed:", e?.message || e);
+    }
+
+    setAuthCookie(res, user.safe());
+    return res.json({ ok: true, user: user.safe() });
+  } catch (err) {
+    console.error("verify-email error", err);
+    return res.status(500).json({ ok: false, code: "ERR_SERVER" });
+  }
+});
+
+/* --------------------------------- RESEND OTP ---------------------------------- */
+router.post("/verify-email/resend", async (req, res) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) return sendErr(res, 400, ERR.REQUIRED, "email required");
+
+    const user = await User.findOne({ email: normalizeEmail(email) });
+    if (!user) return res.json({ ok: true }); // don't leak
+    if (user.isVerified) return res.json({ ok: true });
+
+    // Throttle: allow resend every 60s
+    if (user.lastVerifyEmailAt && Date.now() - user.lastVerifyEmailAt.getTime() < 60_000) {
+      return res.json({ ok: true, message: "Please wait a minute before resending." });
+    }
+
+    const code = generateOTP(6); // uppercase alphanumeric
+    user.verifyCodeHash = await bcrypt.hash(code, 10);
+    user.verifyCodeExpires = new Date(Date.now() + 10 * 60 * 1000);
+    user.lastVerifyEmailAt = new Date();
+    await user.save();
+
+    await sendMail({
+      to: user.email,
+      subject: "Your new Artisan Avenue verification code",
+      text: `Your verification code is: ${code}\nThis code expires in 10 minutes.`,
+      html: `
+        <p>Your new verification code:</p>
+        <p style="font-size:24px;font-weight:bold;letter-spacing:3px">${code}</p>
+        <p>This code expires in <b>10 minutes</b>.</p>
+      `,
+    });
+
+    return res.json({ ok: true, message: "Verification code resent." });
+  } catch (err) {
+    console.error("verify-email/resend error", err);
+    return res.status(500).json({ ok: false, code: "ERR_SERVER" });
+  }
+});
+
 /* --------------------------------- LOGIN ---------------------------------- */
 router.post("/login", async (req, res) => {
   try {
     const { user, password } = req.body || {};
-    if (!user || !password)
-      return sendErr(res, 400, ERR.REQUIRED, "user/password required");
+    if (!user || !password) return sendErr(res, 400, ERR.REQUIRED, "user/password required");
 
     const query = user.includes("@") ? { email: user.toLowerCase() } : { username: user };
     const found = await User.findOne(query);
@@ -102,6 +243,7 @@ router.post("/login", async (req, res) => {
     const ok = await bcrypt.compare(password, found.passwordHash);
     if (!ok) return sendErr(res, 401, ERR.AUTH_FAILED, "invalid credentials");
 
+    // direct login (no verified check, as requested)
     setAuthCookie(res, found.safe());
     return res.json({ ok: true, user: found.safe() });
   } catch (err) {
@@ -110,18 +252,16 @@ router.post("/login", async (req, res) => {
   }
 });
 
-
 /* -------------------------------- LOGOUT ---------------------------------- */
 router.post("/logout", (_req, res) => {
   res.clearCookie("aa_token", {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production" ? true : false, // 👈 important
-    path: "/",   // 👈 also include path so it clears correctly
+    secure: process.env.NODE_ENV === "production" ? true : false,
+    path: "/",
   });
   res.json({ ok: true });
 });
-
 
 /* ---------------------------------- ME ------------------------------------ */
 router.get("/me", requireAuth, async (req, res) => {
@@ -135,14 +275,14 @@ router.get("/me", requireAuth, async (req, res) => {
  * 1) POST /api/auth/forgot/start
  *    Body: { email }
  *    Always returns { ok:true } to avoid user enumeration.
- *    Generates a 6-digit code, stores bcrypt hash + expiry (10m), emails code.
+ *    Generates a **UPPERCASE alphanumeric** code, stores hash + expiry (10m), emails code.
  */
 router.post("/forgot/start", async (req, res) => {
   try {
     const { email } = req.body || {};
     if (!email || !isEmail(email)) return res.json({ ok: true });
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: normalizeEmail(email) });
     if (!user) return res.json({ ok: true });
 
     // simple throttle: 60s between requests
@@ -151,7 +291,7 @@ router.post("/forgot/start", async (req, res) => {
       return res.json({ ok: true });
     }
 
-    const code = (Math.floor(100000 + Math.random() * 900000)).toString(); // 6 digits
+    const code = generateOTP(6); // UPPERCASE alphanumeric
     const hash = await bcrypt.hash(code, 10);
 
     user.resetCodeHash = hash;
@@ -172,8 +312,7 @@ router.post("/forgot/start", async (req, res) => {
     return res.json({ ok: true });
   } catch (err) {
     console.error("forgot/start error", err);
-    // still return ok to avoid leaking info
-    return res.json({ ok: true });
+    return res.json({ ok: true }); // still hide details
   }
 });
 
@@ -187,7 +326,7 @@ router.post("/forgot/verify", async (req, res) => {
     const { email, code } = req.body || {};
     if (!email || !code) return sendErr(res, 400, ERR.REQUIRED, "email/code required");
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email: normalizeEmail(email) });
     if (!user || !user.resetCodeHash || !user.resetCodeExpires) {
       return sendErr(res, 400, "ERR_NO_RESET_SESSION", "no reset session");
     }
@@ -207,7 +346,9 @@ router.post("/forgot/verify", async (req, res) => {
       return sendErr(res, 429, "ERR_TOO_MANY_TRIES", "too many attempts");
     }
 
-    const ok = await bcrypt.compare(code, user.resetCodeHash);
+    // Compare against **UPPERCASE** input
+    const input = String(code || "").trim().toUpperCase();
+    const ok = await bcrypt.compare(input, user.resetCodeHash);
     if (!ok) {
       user.resetCodeAttempts += 1;
       await user.save();
@@ -231,7 +372,6 @@ router.post("/forgot/verify", async (req, res) => {
 /**
  * 3) POST /api/auth/forgot/reset
  *    Body: { email, resetToken, password, confirm }
- *    On success: { ok:true }
  */
 router.post("/forgot/reset", async (req, res) => {
   try {
@@ -252,13 +392,12 @@ router.post("/forgot/reset", async (req, res) => {
       return sendErr(res, 401, "ERR_BAD_RESET_TOKEN", "invalid/expired token");
     }
 
-    const user = await User.findOne({ _id: payload.id, email: email.toLowerCase() });
+    const user = await User.findOne({ _id: payload.id, email: normalizeEmail(email) });
     if (!user) return sendErr(res, 400, "ERR_NO_USER", "user not found");
 
     user.passwordHash = await bcrypt.hash(password, 10);
     await user.save();
 
-    // clear session cookie if any
     res.clearCookie("aa_token", {
       httpOnly: true,
       sameSite: "lax",
@@ -273,4 +412,5 @@ router.post("/forgot/reset", async (req, res) => {
 });
 
 export default router;
+
 

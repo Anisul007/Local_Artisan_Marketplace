@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { apiGet, apiPost } from "../lib/api"; // you already have this
+import { apiGet, apiPost } from "../lib/api";
 
 const AuthCtx = createContext(null);
 
@@ -12,9 +12,13 @@ export function AuthProvider({ children }) {
     let mounted = true;
     (async () => {
       try {
-        const r = await apiGet("/api/auth/me"); // returns {ok,user} if logged in
-        if (mounted && r.ok) setUser(r.user);
-      } catch {}
+        const r = await apiGet("/api/auth/me"); // returns { ok:true, user:{} }
+        if (mounted && r.ok && r.data?.user) {
+          setUser(r.data.user);
+        }
+      } catch {
+        // ignore errors
+      }
       if (mounted) setLoading(false);
     })();
     return () => { mounted = false; };
@@ -37,3 +41,4 @@ export function AuthProvider({ children }) {
 }
 
 export const useAuth = () => useContext(AuthCtx);
+

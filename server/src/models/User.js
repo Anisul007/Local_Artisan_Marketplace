@@ -6,11 +6,27 @@ const VendorSchema = new mongoose.Schema(
     phone:        { type: String, trim: true },
     website:      { type: String, trim: true },
     description:  { type: String, trim: true },
-    primaryCategory: { type: String, trim: true },
+
+    // NEW: multi-select categories
+    primaryCategories: { type: [String], default: [], index: true },
+
+    // Deprecated: kept only for backward compatibility during transition.
+    // If this is present and the array is empty, we’ll migrate it on save.
+    primaryCategory: { type: String, trim: true, select: false },
+
     logoUrl:      { type: String, trim: true }
   },
   { _id: false }
 );
+
+// Migrate legacy single category -> array automatically
+VendorSchema.pre("save", function (next) {
+  if ((!this.primaryCategories || this.primaryCategories.length === 0) && this.primaryCategory) {
+    const c = String(this.primaryCategory || "").trim();
+    if (c) this.primaryCategories = [c];
+  }
+  next();
+});
 
 const UserSchema = new mongoose.Schema(
   {
@@ -39,23 +55,29 @@ const UserSchema = new mongoose.Schema(
 
     address: { type: String, trim: true },
 
-    dob: Date,              // customer only
-    vendor: VendorSchema,   // vendor only
+    dob: Date,            // customer only
+    vendor: VendorSchema, // vendor only
 
-    // ====== NEW: fields for Forgot Password (6-digit OTP) ======
-    resetCodeHash: { type: String },     // bcrypt hash of OTP
-    resetCodeExpires: { type: Date },    // expiry timestamp
-    resetCodeAttempts: { type: Number, default: 0 }, // throttle attempts
-    lastResetRequestAt: { type: Date }   // per-email rate-limit
-    // ===========================================================
+    // ====== Password reset fields ======
+    resetCodeHash:      { type: String },
+    resetCodeExpires:   { type: Date },
+    resetCodeAttempts:  { type: Number, default: 0 },
+    lastResetRequestAt: { type: Date },
+
+    // ====== Email verification fields ======
+    isVerified:         { type: Boolean, default: false },
+    verifyCodeHash:     { type: String },
+    verifyCodeExpires:  { type: Date },
+    lastVerifyEmailAt:  { type: Date }
   },
   { timestamps: true }
 );
 
-// do NOT ever return passwordHash from APIs
+// Never expose sensitive fields
 UserSchema.methods.safe = function () {
-  const { _id, role, firstName, lastName, email, username } = this;
-  return { id: _id, role, firstName, lastName, email, username };
+  const { _id, role, firstName, lastName, email, username, isVerified } = this;
+  return { id: _id, role, firstName, lastName, email, username, isVerified };
 };
 
 export default mongoose.model("User", UserSchema);
+

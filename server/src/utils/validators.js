@@ -5,9 +5,16 @@ export const ERR = {
   PASSWORD_WEAK: "ERR_PASSWORD_WEAK",
   PASSWORD_MISMATCH: "ERR_PASSWORD_MISMATCH",
   AUTH_FAILED: "ERR_AUTH_FAILED",
-  EMAIL_TAKEN: "ERR_EMAIL_TAKEN"
-};
+  EMAIL_TAKEN: "ERR_EMAIL_TAKEN",
 
+  // --- NEW for email verification ---
+  NOT_VERIFIED: "ERR_NOT_VERIFIED",
+  CODE_EXPIRED: "ERR_CODE_EXPIRED",
+  CODE_INCORRECT: "ERR_CODE_INCORRECT",
+  TOO_MANY_TRIES: "ERR_TOO_MANY_TRIES",
+  NO_VERIFY_SESSION: "ERR_NO_VERIFY_SESSION",
+};
+ 
 export const isEmail = (v = "") => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
 // AU phone: 04xxxxxxxx / +61 4xxxxxxxx OR landlines 0[2|3|7|8]xxxxxxxx / +61[2|3|7|8]xxxxxxxx
@@ -20,3 +27,4 @@ export const isAuPhone = (v = "") => {
 
 export const passwordStrong = (v = "") =>
   v.length >= 8 && /[A-Za-z]/.test(v) && /\d/.test(v);
+

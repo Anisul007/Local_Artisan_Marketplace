@@ -1,22 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Modal from "../components/ux/Modal";
 import Reveal from "../components/ux/Reveal";
 
-// Try to use shared helper; if missing, fall back to a local one.
-let apiPost = null;
+// Try to import your centralized API (AuthAPI.register). If missing, use a local fallback.
+let AuthAPI = null;
 try {
-  ({ apiPost } = await import("../lib/api"));
+  // optional shape: AuthAPI.register(payload) -> { ok, message }
+  ({ AuthAPI } = await import("../lib/api"));
 } catch (_) {
-  const API_URL = import.meta.env?.VITE_API_URL || "http://localhost:4000";
-  apiPost = async (path, body) => {
-    const res = await fetch(`${API_URL}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({}));
-    return { ok: res.ok, status: res.status, data };
+  const API_BASE = (import.meta.env?.VITE_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+  const toUrl = (p) => `${API_BASE}${p.startsWith("/api") ? p : `/api/${p.replace(/^\/+/, "")}`}`;
+  AuthAPI = {
+    register: async (payload) => {
+      const res = await fetch(toUrl("/api/auth/register"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const err = new Error(data?.message || "Register failed");
+        err.code = data?.code;
+        err.body = data;
+        throw err;
+      }
+      return data; // { ok:true, message:"..." }
+    },
   };
 }
 
@@ -36,7 +47,7 @@ export const REGISTER_ERROR_CODES = {
   EMAIL_TAKEN: "ERR_EMAIL_TAKEN",
 };
 
-const categories = [
+const ALL_CATEGORIES = [
   "Art & Prints",
   "Body & Beauty",
   "Fashion",
@@ -99,7 +110,27 @@ function PasswordMeter({ value, color = brand.purple }) {
   );
 }
 
+// Small pill/checkbox component for multi-select categories
+function CategoryPill({ label, active, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className={`px-3 py-1 rounded-full text-sm border transition ${
+        active
+          ? "bg-[var(--br)] text-white border-[var(--br)] shadow"
+          : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50"
+      }`}
+      style={{ ["--br"]: brand.purple }}
+    >
+      {label}
+    </button>
+  );
+}
+
 export default function Register() {
+  const nav = useNavigate();
+
   const [role, setRole] = useState("customer"); // "customer" | "vendor"
 
   // Shared
@@ -119,12 +150,19 @@ export default function Register() {
   const [phone, setPhone]               = useState("");
   const [website, setWebsite]           = useState("");
   const [desc, setDesc]                 = useState("");
-  const [primaryCategory, setPrimaryCategory] = useState("");
+  // NEW: multi-select categories
+  const [primaryCategories, setPrimaryCategories] = useState([]);
   const [logoFile, setLogoFile]         = useState(null); // optional (not sent yet)
 
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  function toggleCategory(cat) {
+    setPrimaryCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  }
 
   function validate() {
     const e = {};
@@ -149,7 +187,9 @@ export default function Register() {
     } else {
       if (!businessName.trim()) e.businessName = REGISTER_ERROR_CODES.REQUIRED;
       if (!phone.trim() || !isAuPhone(phone)) e.phone = REGISTER_ERROR_CODES.INVALID_PHONE_AU;
-      if (!primaryCategory) e.primaryCategory = REGISTER_ERROR_CODES.REQUIRED;
+
+      // At least one category for vendor
+      if (!primaryCategories.length) e.primaryCategories = REGISTER_ERROR_CODES.REQUIRED;
       if (!desc.trim()) e.desc = REGISTER_ERROR_CODES.REQUIRED;
       // website optional, logo optional (not sent yet)
     }
@@ -200,25 +240,41 @@ export default function Register() {
       payload.phone = phone;
       payload.website = website;
       payload.description = desc;
-      payload.primaryCategory = primaryCategory;
-      // NOTE: logoFile is not sent here; backend expects JSON (no file upload).
+
+      // NEW: multi-select — send both for backward/forward compatibility
+      payload.primaryCategories = primaryCategories;              // <-- new array field (preferred)
+      payload.primaryCategory = primaryCategories[0] || "";       // <-- legacy single field (your current schema)
+      // NOTE: logoFile is not sent here; backend expects JSON; we can add Multer later
     }
 
-    setBusy(true);
-    const r = await apiPost("/api/auth/register", payload);
-    setBusy(false);
-
-    if (r.ok && r?.data?.ok) {
+    try {
+      setBusy(true);
       setErrors({});
-      setSuccess(true);
-    } else {
-      // r.data.code from server
-      const code = r?.data?.code;
+      // call backend → backend sends the OTP email
+      const res = await AuthAPI.register(payload);
+      setBusy(false);
+
+      if (res?.ok) {
+        setSuccess(true); // show modal
+        // redirect to verify page with email (10–12s window is handled server-side)
+        setTimeout(() => {
+          nav(`/verify-email?email=${encodeURIComponent(email)}`);
+        }, 500);
+      } else {
+        // fallback – treat as ok flow if server returned a message
+        setSuccess(true);
+        setTimeout(() => {
+          nav(`/verify-email?email=${encodeURIComponent(email)}`);
+        }, 500);
+      }
+    } catch (err) {
+      setBusy(false);
+      const code = err?.code || err?.body?.code;
       if (code) {
         const { field, msg } = mapServerError(code);
         setErrors((prev) => ({ ...prev, [field]: code, form: msg }));
       } else {
-        setErrors((prev) => ({ ...prev, form: "Something went wrong. Please try again." }));
+        setErrors((prev) => ({ ...prev, form: err?.message || "Something went wrong. Please try again." }));
       }
     }
   }
@@ -246,7 +302,7 @@ export default function Register() {
 
   return (
     <main className="relative min-h-[90vh] bg-white">
-      {/* background shapes; add your own background image if you want */}
+      {/* subtle background shapes */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div
           className="absolute -top-24 -left-20 w-[420px] h-[420px] rounded-full opacity-10"
@@ -439,35 +495,36 @@ export default function Register() {
                     {fieldError("desc")}
                   </div>
 
-                  <div className="grid md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="font-semibold text-sm">Primary Category *</label>
-                      <select
-                        className={`w-full h-11 rounded-xl border px-3 outline-none transition
-                          ${errors.primaryCategory ? "border-red-400" : "border-gray-300 focus:border-[color:var(--br)] focus:ring-2 focus:ring-purple-100"}`}
-                        style={{ ["--br"]: brand.purple }}
-                        value={primaryCategory}
-                        onChange={(e) => setPrimaryCategory(e.target.value)}
-                      >
-                        <option value="">Select…</option>
-                        {categories.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                      {fieldError("primaryCategory")}
+                  {/* NEW: Multi-select categories */}
+                  <div>
+                    <label className="font-semibold text-sm">Categories *</label>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {ALL_CATEGORIES.map((c) => (
+                        <CategoryPill
+                          key={c}
+                          label={c}
+                          active={primaryCategories.includes(c)}
+                          onToggle={() => toggleCategory(c)}
+                        />
+                      ))}
                     </div>
-                    <div>
-                      <label className="font-semibold text-sm">Business Logo / Profile (optional)</label>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
-                        className="block w-full text-sm"
-                      />
-                      {/* Not uploaded yet - backend expects JSON; we can add Multer later */}
-                    </div>
+                    {errors.primaryCategories && (
+                      <p className="mt-1 text-xs text-red-600">Pick at least one category.</p>
+                    )}
+                    <p className="mt-2 text-xs text-gray-500">
+                      You can choose multiple categories (e.g. “Home” and “Jewellery”).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="font-semibold text-sm">Business Logo / Profile (optional)</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setLogoFile(e.target.files?.[0] || null)}
+                      className="block w-full text-sm"
+                    />
+                    {/* Not uploaded yet - backend expects JSON; we can add Multer later */}
                   </div>
                 </div>
               )}
@@ -550,7 +607,7 @@ export default function Register() {
         </Reveal>
       </div>
 
-      {/* Success popup */}
+      {/* Post-submit modal */}
       <Modal open={success} onClose={() => setSuccess(false)}>
         <div className="text-center">
           <div
@@ -559,17 +616,22 @@ export default function Register() {
           >
             ✓
           </div>
-          <h3 className="text-xl font-bold mb-1">Registration successful</h3>
-          <p className="text-gray-600">Welcome! You can now log in to your account.</p>
+          <h3 className="text-xl font-bold mb-1">Check your email</h3>
+          <p className="text-gray-600">
+            We’ve sent a 6-character verification code to <b>{email}</b>. Enter it within 10 minutes to
+            complete your registration.
+          </p>
           <a
-            href="/login"
+            href={`/verify-email?email=${encodeURIComponent(email)}`}
             className="mt-4 inline-block rounded-xl px-4 py-2 text-white font-semibold"
             style={{ background: brand.purple }}
           >
-            Go to Login
+            Enter Code
           </a>
         </div>
       </Modal>
     </main>
   );
 }
+
+

@@ -11,6 +11,7 @@ export const LOGIN_ERROR_CODES = {
   INVALID_USERNAME: "ERR_INVALID_USERNAME",
   INVALID_PASSWORD: "ERR_INVALID_PASSWORD",
   AUTH_FAILED: "ERR_AUTH_FAILED",
+  NOT_VERIFIED: "ERR_NOT_VERIFIED",
 };
 
 const brand = {
@@ -24,14 +25,21 @@ const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 const isUsername = (v) => /^[a-zA-Z0-9_]{3,24}$/.test(v);
 
 export default function Login() {
-  const { signIn } = useAuth(); // updates global auth
+  const auth = useAuth();
+  // Be resilient to different context APIs
+  const setAuthUser = (u) => {
+    if (!auth) return;
+    if (typeof auth.signIn === "function") return auth.signIn(u);
+    if (typeof auth.setUser === "function") return auth.setUser(u);
+  };
+
   const navigate = useNavigate();
   const location = useLocation();
 
-  // If you want “return to previous page” for customers, uncomment next line:
+  // If you want “return to previous page” for customers, uncomment:
   // const from = location.state?.from?.pathname || "/";
 
-  const [user, setUser] = useState("");      // email or username
+  const [user, setUserInput] = useState(""); // email or username
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
 
@@ -72,6 +80,8 @@ export default function Login() {
         return "Invalid username.";
       case LOGIN_ERROR_CODES.INVALID_PASSWORD:
         return "Invalid password.";
+      case LOGIN_ERROR_CODES.NOT_VERIFIED:
+        return "Your email isn’t verified yet.";
       case LOGIN_ERROR_CODES.AUTH_FAILED:
       default:
         return "Invalid credentials. Please try again.";
@@ -82,7 +92,8 @@ export default function Login() {
   function getDestByRole(u) {
     const role = u?.role;
     const isVendor = u?.isVendor || role === "vendor" || role === "seller";
-    return isVendor ? "/vendor/dashboard" : "/"; // customer stays at home
+    // Client prefers product page for customers—change "/products" if you have that route.
+    return isVendor ? "/vendor/dashboard" : "/"; // TODO: replace "/" with "/products" when ready
   }
 
   async function onSubmit(e) {
@@ -96,31 +107,41 @@ export default function Login() {
     if (r.ok && r?.data?.ok) {
       if (remember) localStorage.setItem("aa-last-user", user);
 
-      // We want a user object with role/isVendor. If the login payload
-      // doesn't include it, hydrate immediately via /me.
+      // hydrate user if needed
       let u = r?.data?.user;
       if (!u || (u && !("role" in u) && !("isVendor" in u))) {
         const me = await apiGet("/api/auth/me");
-        if (me.ok && me.user) u = me.user;
+        if (me?.ok) u = me.user || me?.data?.user || u;
       }
 
       // Update global auth state so NavBar etc. react instantly
-      if (u) signIn(u);
+      if (u) setAuthUser(u);
       setFreshUser(u || null);
 
       // Show success UI
       setErrors({});
       setSuccessOpen(true);
 
-      // Auto-navigate right away (SPA) based on role
+      // Auto-navigate based on role
       const dest = getDestByRole(u);
-      // If you prefer to *stay* on this page in dev for debugging, wrap with:
-      // if (import.meta.env.PROD) navigate(dest, { replace: true });
       navigate(dest, { replace: true });
-    } else {
-      const code = r?.data?.code || LOGIN_ERROR_CODES.AUTH_FAILED;
-      setErrors({ form: mapServerError(code), code });
+      return;
     }
+
+    // Handle errors
+    const code = r?.data?.code || LOGIN_ERROR_CODES.AUTH_FAILED;
+
+    // Special case: not verified → send to verify screen if user entered an email
+    if (r.status === 403 && code === LOGIN_ERROR_CODES.NOT_VERIFIED) {
+      if (user.includes("@") && isEmail(user)) {
+        navigate(`/verify-email?email=${encodeURIComponent(user)}`);
+        return;
+      }
+      setErrors({ form: "Your email isn’t verified yet. Please log in using your email to verify." , code });
+      return;
+    }
+
+    setErrors({ form: mapServerError(code), code });
   }
 
   return (
@@ -162,7 +183,7 @@ export default function Login() {
             <label className="block text-sm font-semibold mb-1">Email or Username *</label>
             <input
               value={user}
-              onChange={(e) => setUser(e.target.value)}
+              onChange={(e) => setUserInput(e.target.value)}
               className={`w-full h-11 rounded-xl border px-3 outline-none transition
                 ${
                   errors.user
@@ -253,5 +274,6 @@ export default function Login() {
     </main>
   );
 }
+
 
 
