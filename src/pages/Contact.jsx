@@ -28,7 +28,7 @@ import {
  */
 
 const inputBase =
-  "w-full rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-gray-100 placeholder-gray-400 outline-none focus:ring-2 focus:ring-white/30 focus:border-white/20 transition";
+  "w-full rounded-xl bg-white border border-gray-300 px-4 py-3 text-gray-900 placeholder-gray-500 outline-none focus:ring-2 focus:ring-purple-200 focus:border-purple-400 transition";
 
 const Section = ({ children, className = "" }) => (
   <section className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 ${className}`}>{children}</section>
@@ -78,10 +78,16 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0d1220] text-gray-100">
+    <div
+      className="min-h-screen"
+      style={{
+        background: "linear-gradient(90deg, #fff7ed 0%, #ffe5d0 50%, #ffd6a0 100%)",
+        color: "#222",
+      }}
+    >
       {/* Hero with map */}
       <div className="relative">
-        <div className="absolute inset-0 bg-gradient-to-b from-white/[0.06] to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-white/60 to-transparent pointer-events-none" />
         <iframe
           title="Adelaide Handmade Market"
           className="w-full h-[42vh] md:h-[56vh] grayscale-[25%] contrast-125 brightness-90"
@@ -100,7 +106,7 @@ export default function ContactPage() {
             <InfoCard
               icon={<MapPin className="w-5 h-5" />}
               title="Visit us"
-              lines={["123 Maker Lane", "Melbourne, VIC 3000"]}
+              lines={["192 Rundle Street", "Adelaide, SA 5000"]}
               action={{ label: "Get directions", href: "https://maps.google.com/?q=Adelaide%20handmade%20market%20Adelaide%20SA" }}
             />
             {/* Card: hours */}
@@ -131,11 +137,11 @@ export default function ContactPage() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, amount: 0.4 }}
             transition={{ duration: 0.5 }}
-            className="bg-white/5 backdrop-blur rounded-2xl border border-white/10 p-6 md:p-8 shadow-xl shadow-black/20"
+            className="bg-white rounded-2xl border border-purple-200 p-6 md:p-8 shadow-xl"
           >
             <div className="mb-6">
-              <h2 className="text-2xl md:text-3xl font-semibold">Let's make something beautiful</h2>
-              <p className="mt-1 text-gray-400">Questions, commissions, wholesale—drop us a line and we’ll be in touch.</p>
+              <h2 className="text-2xl md:text-3xl font-semibold text-purple-900">Let's make something beautiful</h2>
+              <p className="mt-1 text-gray-700">Questions, commissions, wholesale—drop us a line and we’ll be in touch.</p>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid sm:grid-cols-2 gap-4">
@@ -202,7 +208,7 @@ export default function ContactPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="inline-flex items-center gap-2 rounded-xl bg-white text-gray-900 font-semibold px-5 py-3 disabled:opacity-70"
+                  className="inline-flex items-center gap-2 rounded-xl bg-orange-400 hover:bg-orange-500 text-white font-semibold px-5 py-3 shadow-md transition-colors focus:outline-none focus:ring-2 focus:ring-orange-200 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {submitting ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -287,21 +293,21 @@ export default function ContactPage() {
 function Field({ label, error, children }) {
   return (
     <label className="block">
-      <div className="mb-1 text-sm text-gray-300">{label}</div>
+      <div className="mb-1 text-sm text-gray-900">{label}</div>
       {children}
-      {error && <p className="mt-1 text-sm text-rose-400">{error}</p>}
+      {error && <p className="mt-1 text-sm text-rose-600">{error}</p>}
     </label>
   );
 }
 
 function InfoCard({ icon, title, lines = [], action, actions }) {
   return (
-    <div className="rounded-2xl bg-white/5 backdrop-blur border border-white/10 p-5 md:p-6 shadow-lg shadow-black/20">
-      <div className="flex items-center gap-2 text-white mb-2">
-        <div className="p-2 rounded-xl bg-white/10">{icon}</div>
+    <div className="rounded-2xl bg-white border border-purple-200 p-5 md:p-6 shadow">
+      <div className="flex items-center gap-2 text-purple-900 mb-2">
+        <div className="p-2 rounded-xl bg-purple-50">{icon}</div>
         <h3 className="font-semibold">{title}</h3>
       </div>
-      <div className="space-y-0.5 text-gray-300">
+      <div className="space-y-0.5 text-gray-800">
         {lines.map((l, i) => (
           <p key={i}>{l}</p>
         ))}
@@ -309,7 +315,7 @@ function InfoCard({ icon, title, lines = [], action, actions }) {
       {action && (
         <a
           href={action.href}
-          className="mt-3 inline-flex items-center gap-1 text-sm text-white hover:opacity-90"
+          className="mt-3 inline-flex items-center gap-1 text-sm text-purple-900 hover:underline"
         >
           {action.label} <ArrowRight className="w-3.5 h-3.5" />
         </a>
@@ -320,7 +326,7 @@ function InfoCard({ icon, title, lines = [], action, actions }) {
             <button
               key={i}
               onClick={a.onClick}
-              className="text-xs px-3 py-1.5 rounded-lg bg-white/10 text-white hover:bg-white/15"
+              className="text-xs px-3 py-1.5 rounded-lg bg-purple-50 text-purple-900 hover:bg-purple-100"
             >
               {a.label}
             </button>
@@ -334,10 +340,10 @@ function InfoCard({ icon, title, lines = [], action, actions }) {
 function Bullet({ title, icon, children }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="mt-1 p-2 rounded-xl bg-white/10 text-white">{icon}</div>
+      <div className="mt-1 p-2 rounded-xl bg-purple-50 text-purple-900">{icon}</div>
       <div>
         <div className="font-medium">{title}</div>
-        <p className="text-gray-400">{children}</p>
+        <p className="text-gray-700">{children}</p>
       </div>
     </div>
   );
@@ -347,7 +353,7 @@ function SocialChip({ icon, label, href }) {
   return (
     <a
       href={href}
-      className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/15"
+      className="inline-flex items-center gap-2 rounded-full bg-purple-50 px-3 py-1.5 text-sm text-purple-900 hover:bg-purple-100"
     >
       {icon}
       <span>{label}</span>
@@ -358,7 +364,7 @@ function SocialChip({ icon, label, href }) {
 function Accordion({ items }) {
   const [open, setOpen] = useState(0);
   return (
-    <div className="divide-y divide-white/10 rounded-xl border border-white/10 overflow-hidden">
+    <div className="divide-y divide-purple-100 rounded-xl border border-purple-200 overflow-hidden bg-white">
       {items.map((it, i) => (
         <details
           key={i}
@@ -367,13 +373,21 @@ function Accordion({ items }) {
             e.preventDefault();
             setOpen(open === i ? -1 : i);
           }}
-          className="bg-white/[0.04]"
+          className={`transition-colors ${
+            open === i
+              ? "bg-purple-50"
+              : "bg-white hover:bg-purple-50"
+          }`}
         >
           <summary className="cursor-pointer list-none select-none px-4 py-3 flex items-center justify-between">
-            <span className="font-medium text-white">{it.q}</span>
-            <ArrowRight className={`w-4 h-4 transition-transform ${open === i ? "rotate-90" : "rotate-0"}`} />
+            <span className={`font-medium ${open === i ? "text-purple-900" : "text-gray-900"}`}>
+              {it.q}
+            </span>
+            <ArrowRight className={`w-4 h-4 transition-transform ${open === i ? "rotate-90 text-purple-700" : "rotate-0 text-gray-400"}`} />
           </summary>
-          <div className="px-4 pb-4 text-gray-300">{it.a}</div>
+          <div className={`px-4 pb-4 ${open === i ? "text-purple-900" : "text-gray-800"}`}>
+            {it.a}
+          </div>
         </details>
       ))}
     </div>

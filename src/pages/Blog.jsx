@@ -8,7 +8,7 @@ import React, { useMemo, useState } from "react";
 // --- Dummy content (replace with data from your API/CMS later) ---
 const CATEGORIES = [
   "All",
-  "Maker Stories",
+  "Vendor Stories",
   "How‑Tos",
   "Materials",
   "Sustainability",
@@ -198,7 +198,7 @@ function NewsletterBox() {
     <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
       <h4 className="text-gray-900 font-semibold">Subscribe</h4>
       <p className="text-sm text-gray-600 mt-1">
-        Monthly round‑ups of new makers, guides, and events.
+        Monthly round‑ups of new vendors, guides, and events.
       </p>
       <form onSubmit={(e) => e.preventDefault()} className="mt-3 flex gap-2">
         <input
@@ -278,19 +278,21 @@ export default function BlogPage() {
   React.useEffect(() => setPage(1), [query, category]);
 
   return (
-    <div className="bg-gray-50 text-gray-800 min-h-screen">
+    // Removed inline gradient styles — plain white background now
+    <div className="min-h-screen bg-white text-gray-800">
       {/* Hero */}
       <section className="relative">
+        {/* Image background only — no gradient overlay */}
         <img
           src="/images/blog/blog-bg.jpg"
           alt="Artisan Avenue Blog"
-          className="absolute inset-0 w-full h-full object-cover opacity-30"
+          className="absolute inset-0 w-full h-full object-cover opacity-20 pointer-events-none z-0"
         />
         <div className="relative container py-16 md:py-24">
           <div className="max-w-3xl">
             <span className="text-emerald-600 font-semibold">Artisan Avenue Blog</span>
             <h1 className="mt-2 text-3xl md:text-5xl font-extrabold text-gray-900 leading-tight">
-              Stories, Guides & Events for Makers and Curious Shoppers
+              Stories, Guides & Events for Vendors and Curious Shoppers
             </h1>
             <p className="mt-3 text-gray-700">
               Discover how things are made, meet local creators, and learn practical tips to grow your craft.
@@ -306,7 +308,7 @@ export default function BlogPage() {
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search articles, tags, makers…"
+                  placeholder="Search articles, tags, vendors…"
                   className="w-full bg-transparent outline-none placeholder:text-gray-400"
                 />
               </div>
@@ -352,7 +354,7 @@ export default function BlogPage() {
           <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
             <h4 className="text-gray-900 font-semibold">About the Blog</h4>
             <p className="text-sm text-gray-600 mt-2">
-              We champion Australian makers and sustainable, small‑batch goods. Expect practical guides, event roundups, and honest stories from the studio floor.
+              We champion Australian vendors and sustainable, small‑batch goods. Expect practical guides, event roundups, and honest stories from the studio floor.
             </p>
           </div>
         </aside>
@@ -360,14 +362,14 @@ export default function BlogPage() {
 
       {/* CTA strip */}
       <section className="container mb-14">
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 md:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="rounded-2xl border border-orange-200 bg-orange-50 p-6 md:p-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h3 className="text-gray-900 font-semibold text-xl">Are you a maker?</h3>
-            <p className="text-gray-700 text-sm mt-1">Share your process with our community. Pitch a story or tutorial.</p>
+            <h3 className="text-orange-900 font-semibold text-xl">Are you a vendor?</h3>
+            <p className="text-orange-800 text-sm mt-1">Share your process with our community. Pitch a story or tutorial.</p>
           </div>
           <a
             href="/contact"
-            className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-400"
+            className="inline-flex items-center justify-center px-5 py-2.5 rounded-xl bg-orange-400 text-white font-semibold hover:bg-orange-500"
           >
             Pitch an Article
           </a>
@@ -395,3 +397,4 @@ USAGE
    <Route path="/blog" element={<BlogPage />} />
 4) Later, replace the POSTS array with data from your backend/CMS.
 */
+   

@@ -6,7 +6,7 @@ import About from "./pages/About";
 import BlogPage from "./pages/Blog";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
-import ForMakersPage from "./pages/ForMakers";
+import ForVendorsPage from "./pages/ForVendors.jsx";
 import ForgotPassword from "./pages/ForgotPassword";
 import VerifyEmail from "./pages/VerifyEmail"; 
 import Contact from "./pages/Contact";
@@ -40,7 +40,7 @@ function App() {
         <Route path="/forgot" element={<ForgotPassword />} />
         <Route path="/verify-email" element={<VerifyEmail />} /> 
         <Route path="/blog" element={<BlogPage />} />
-        <Route path="/for-makers" element={<ForMakersPage />} />
+        <Route path="/for-vendors" element={<ForVendorsPage />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/shop" element={<ShopHandmade />} />
 

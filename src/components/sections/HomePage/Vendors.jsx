@@ -12,7 +12,7 @@ export default function Makers() {
       <div className="container">
         <h2 className="text-3xl font-bold mb-2">Handmade brands you’ll fall in love with.</h2>
         <p className="mb-6 text-gray-600 max-w-3xl">
-          Behind every handcrafted item is a passionate Aussie Maker working hard to create original designs.
+          Behind every handcrafted item is a passionate Aussie Vendor working hard to create original designs.
         </p>
         <div className="grid md:grid-cols-4 gap-6">
           {items.map((m, i) => (

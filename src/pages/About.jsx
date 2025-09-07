@@ -47,7 +47,7 @@ export default function About() {
             </h2>
             <p className="text-gray-700 text-lg leading-relaxed">
               Artisan Avenue was founded to bridge the gap between passionate
-              makers and conscious buyers. Every handcrafted item tells a story
+              vendors and conscious buyers. Every handcrafted item tells a story
               — of tradition, creativity, and sustainability. Our mission is to
               give artisans a digital home where they can showcase their talents
               and reach customers who truly value craftsmanship.
@@ -75,7 +75,7 @@ export default function About() {
               {
                 icon: <FaUsers />,
                 title: "Community",
-                text: "Connecting local makers with customers who care.",
+                text: "Connecting local vendors with customers who care.",
               },
               {
                 icon: <FaGlobe />,
@@ -145,7 +145,7 @@ export default function About() {
       {/* NEW: Meet the Makers Section */}
       <section className="py-16 bg-gradient-to-r from-[#4b0082]/90 to-[#ff6600]/90 text-white">
         <div className="max-w-6xl mx-auto px-6 text-center">
-          <h2 className="text-3xl font-bold mb-12">Meet the Makers</h2>
+          <h2 className="text-3xl font-bold mb-12">Meet the Vendors</h2>
           <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-8">
             {[1, 2, 3].map((m) => (
               <div
@@ -154,7 +154,7 @@ export default function About() {
               >
                 <img
                   src={`/images/m${m}.jpg`}
-                  alt={`Maker ${m}`}
+                  alt={`Vendor ${m}`}
                   className="w-full h-40 object-cover rounded-xl mb-4"
                 />
                 <h3 className="text-lg font-bold">Artisan {m}</h3>

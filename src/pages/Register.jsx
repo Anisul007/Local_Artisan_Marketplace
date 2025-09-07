@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom"; // <-- add useLocation
 import Modal from "../components/ux/Modal";
 import Reveal from "../components/ux/Reveal";
 
@@ -130,6 +130,7 @@ function CategoryPill({ label, active, onToggle }) {
 
 export default function Register() {
   const nav = useNavigate();
+  const location = useLocation(); // <-- get location
 
   const [role, setRole] = useState("customer"); // "customer" | "vendor"
 
@@ -299,6 +300,15 @@ export default function Register() {
 
   // Reset role-specific errors when switching role
   useEffect(() => setErrors({}), [role]);
+
+  // Set role from query param if present
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const urlRole = params.get("role");
+    if (urlRole === "vendor" || urlRole === "customer") {
+      setRole(urlRole);
+    }
+  }, [location.search]);
 
   return (
     <main className="relative min-h-[90vh] bg-white">

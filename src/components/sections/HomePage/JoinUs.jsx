@@ -11,7 +11,7 @@ export default function JoinUs() {
               Join the Marketplace and get your brand in the hands of Australia’s conscious consumers.
             </h2>
             <p className="mb-6 opacity-90">
-              Opportunity for Aussie makers, designers & creatives to sell, learn & connect.
+              Opportunity for Aussie vendors, designers & creatives to sell, learn & connect.
             </p>
             <a href="/register" className="border px-5 py-3 inline-block rounded-lg hover:bg-white hover:text-[#3b7f78]">
               Find Out More
@@ -19,7 +19,7 @@ export default function JoinUs() {
           </div>
         </Reveal>
         <Reveal delay={0.1} y={30}>
-          <img src="/images/join.jpg" alt="Join Makers" className="rounded-xl shadow-lg" />
+          <img src="/images/join.jpg" alt="Join Vendors" className="rounded-xl shadow-lg" />
         </Reveal>
       </div>
     </section>

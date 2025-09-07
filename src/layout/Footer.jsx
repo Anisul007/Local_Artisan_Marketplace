@@ -12,7 +12,7 @@ export default function Footer() {
              className="h-20 w-auto mx-auto" 
           />
           <p className="text-sm leading-6">
-            Curated marketplace for Australian makers. Thoughtfully made,
+            Curated marketplace for Australian vendors. Thoughtfully made,
             small-batch goods.
           </p>
         </div>
@@ -35,7 +35,11 @@ export default function Footer() {
             <li><a href="/about" className="hover:text-white">Our Story</a></li>
             <li><a href="/contact" className="hover:text-white">Contact</a></li>
             <li><a href="/blog" className="hover:text-white">Blog</a></li>
-            <li><a href="/register" className="hover:text-white">Become a Maker</a></li>
+            <li>
+              <a href="/register?role=vendor" className="hover:text-white">
+                Become a Vendor
+              </a>
+            </li>
           </ul>
         </div>
 

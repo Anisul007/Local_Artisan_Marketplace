@@ -15,11 +15,11 @@ export default function Hero() {
             Your go-to marketplace for locally handcrafted products, small batch and unique creations.
           </p>
           <div className="flex gap-4 mt-5">
-            <a href="/services" className="px-6 py-3 rounded-xl bg-orange-700 text-white font-semibold hover:bg-orange-800">
+            <a href="/shop" className="px-6 py-3 rounded-xl bg-orange-700 text-white font-semibold hover:bg-orange-800">
               Shop Handmade
             </a>
-            <a href="/makers" className="px-6 py-3 rounded-xl border-2 border-orange-700 text-orange-800 font-semibold hover:bg-orange-50">
-              For Makers
+            <a href="/for-vendors" className="px-6 py-3 rounded-xl border-2 border-orange-700 text-orange-800 font-semibold hover:bg-orange-50">
+              For Vendors
             </a>
           </div>
         </div>

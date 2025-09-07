@@ -4,7 +4,7 @@ import {
   Categories,
   Featured,
   AboutBlurb,
-  Makers,
+  Vendors,
   JoinUs,
   Testimonials,
 } from '../components/sections/HomePage';
@@ -17,7 +17,7 @@ export default function Home() {
       <Categories />
       <Featured />
       <AboutBlurb />
-      <Makers />
+      <Vendors />
       <JoinUs />
       <Testimonials />
     </>

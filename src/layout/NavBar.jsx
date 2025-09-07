@@ -49,8 +49,8 @@ export default function NavBar() {
 
       {/* Center: links */}
       <nav className="nav-links">
-        {["Home", "About", "Shop Handmade", "For Makers", "Blog", "Contact"].map((label, i) => {
-          const href = ["/", "/about", "/shop", "/for-makers", "/blog", "/contact"][i];
+        {["Home", "About", "Shop Handmade", "For Vendors", "Blog", "Contact"].map((label, i) => {
+          const href = ["/", "/about", "/shop", "/for-vendors", "/blog", "/contact"][i];
           return (
             <a key={label} href={href} className="nav-pill">
               {label}
