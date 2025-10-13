@@ -53,8 +53,6 @@ const UserSchema = new mongoose.Schema(
 
     passwordHash: { type: String, required: true },
 
-    phone: { type: String, trim: true },
-
     address: { type: String, trim: true },
 
     dob: Date,            // customer only
