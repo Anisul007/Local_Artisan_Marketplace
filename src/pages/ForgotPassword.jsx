@@ -66,7 +66,7 @@ export default function ForgotPassword() {
     setSubmitting(false);
     if (res.ok && res.data.ok) {
       setStep(2);
-      setMsg("We sent a 6‑digit code to your email.");
+      setMsg("We sent a 6-character code to your email."); // ★ changed copy
       setCooldown(30);
       setTimeout(() => inputs.current[0]?.focus(), 60);
     } else {
@@ -74,12 +74,16 @@ export default function ForgotPassword() {
     }
   }
 
+  // ★ allow A–Z and 0–9, uppercase, single char per box
   function onCodeChange(i, v) {
-    if (!/^\d?$/.test(v)) return; // allow one digit
+    const ch = (v || "")
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(-1); // keep last valid char only
     const next = [...code];
-    next[i] = v;
+    next[i] = ch;
     setCode(next);
-    if (v && i < 5) inputs.current[i + 1]?.focus();
+    if (ch && i < 5) inputs.current[i + 1]?.focus();
   }
 
   function onCodeKeyDown(i, e) {
@@ -88,8 +92,10 @@ export default function ForgotPassword() {
     }
   }
 
+  // ★ keep only alphanumerics, uppercase, fill left→right
   function onCodePaste(e) {
-    const txt = (e.clipboardData.getData("text") || "").replace(/\D/g, "").slice(0, 6);
+    const raw = e.clipboardData.getData("text") || "";
+    const txt = raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 6);
     if (txt.length) {
       const arr = Array.from({ length: 6 }, (_, k) => txt[k] || "");
       setCode(arr);
@@ -106,7 +112,7 @@ export default function ForgotPassword() {
     const res = await post("forgot/start", { email });
     setSubmitting(false);
     if (res.ok && res.data.ok) {
-      setMsg("Code re‑sent. Check your inbox.");
+      setMsg("Code re-sent. Check your inbox.");
       setCooldown(30);
     } else {
       setErr("Could not resend. Try again later.");
@@ -116,8 +122,8 @@ export default function ForgotPassword() {
   async function verify() {
     setMsg(null);
     setErr(null);
-    const pin = code.join("");
-    if (pin.length !== 6) return setErr("Enter the 6‑digit code.");
+    const pin = code.join("").toUpperCase(); // ★ ensure uppercase
+    if (pin.length !== 6) return setErr("Enter the 6-character code.");
     setSubmitting(true);
     const res = await post("forgot/verify", { email, code: pin });
     setSubmitting(false);
@@ -198,8 +204,8 @@ export default function ForgotPassword() {
 
           <h1 className="text-2xl md:text-3xl font-extrabold">{stepTitle}</h1>
           <p className="text-gray-600 mt-1">
-            {step === 1 && "Enter your account email to receive a 6‑digit code."}
-            {step === 2 && "Enter the 6‑digit code we sent to your email."}
+            {step === 1 && "Enter your account email to receive a 6-character code."}{/* ★ */}
+            {step === 2 && "Enter the 6-character code we sent to your email."}{/* ★ */}
             {step === 3 && "Create a new password."}
             {step === 4 && "Your password has been reset successfully."}
           </p>
@@ -247,13 +253,15 @@ export default function ForgotPassword() {
               <div
                 className="flex gap-3 justify-between"
                 onPaste={onCodePaste}
-                aria-label="6-digit verification code"
+                aria-label="6-character verification code"
               >
                 {code.map((v, i) => (
                   <input
                     key={i}
                     ref={(el) => (inputs.current[i] = el)}
-                    inputMode="numeric"
+                    type="text"                 // ★ was implicit, ensure text
+                    inputMode="text"            // ★ was "numeric"
+                    autoComplete="one-time-code"
                     maxLength={1}
                     value={v}
                     onChange={(e) => onCodeChange(i, e.target.value)}
@@ -337,8 +345,10 @@ export default function ForgotPassword() {
           {/* Step 4: Done */}
           {step === 4 && (
             <div className="mt-6">
-              <div className="rounded-xl bg-purple-50 border border-purple-200 px-4 py-3 text-[color:var(--p)]"
-                   style={{ ["--p"]: brand.purple }}>
+              <div
+                className="rounded-xl bg-purple-50 border border-purple-200 px-4 py-3 text-[color:var(--p)]"
+                style={{ ["--p"]: brand.purple }}
+              >
                 Your password has been updated.
               </div>
               <a
@@ -355,4 +365,3 @@ export default function ForgotPassword() {
     </main>
   );
 }
-

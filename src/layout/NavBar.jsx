@@ -1,3 +1,4 @@
+// src/layout/NavBar.jsx
 import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import Avatar from "../components/ux/Avatar";
@@ -6,7 +7,7 @@ import "./Navbar.css";
 import { FaUser, FaHeart, FaShoppingCart, FaSearch, FaTimes } from "react-icons/fa";
 
 export default function NavBar() {
-  const { user, loading, logout } = useAuth();             // <-- get user + loading + logout from context
+  const { user, loading, logout } = useAuth();
   const [showAccount, setShowAccount] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -14,7 +15,7 @@ export default function NavBar() {
 
   const accountRef = useRef(null);
 
-  // close dropdown on outside click / ESC
+  // Close dropdown on outside click / ESC
   useEffect(() => {
     function onDocClick(e) {
       if (accountRef.current && !accountRef.current.contains(e.target)) {
@@ -40,9 +41,14 @@ export default function NavBar() {
     alert("Searching: " + q); // TODO: replace with real navigation
   }
 
+  // ---- NEW: vendor check + menu target ----
+  const isVendor = !!(user && (user.role === "vendor" || user.isVendor === true));
+  const menuPrimaryLabel = isVendor ? "Dashboard" : "Profile";
+  const menuPrimaryHref = isVendor ? "/vendor/dashboard" : "/profile";
+
   return (
     <header className="navbar">
-      {/* Left: Logo only */}
+      {/* Left: Logo */}
       <a href="/" className="logo">
         <img src="/images/logo.png" alt="Artisan Avenue" />
       </a>
@@ -59,27 +65,20 @@ export default function NavBar() {
         })}
       </nav>
 
-      {/* Right: either icons or search bar */}
+      {/* Right */}
       <div className="right">
         {!searchOpen ? (
           <>
-            {/* Account / Avatar */}
+            {/* Account */}
             <div className="icon-wrap" ref={accountRef}>
               <button
                 className="icon-btn"
                 aria-label="Account"
                 onClick={() => setShowAccount((s) => !s)}
-                disabled={loading}   // prevent clicks while hydrating
+                disabled={loading}
               >
                 {loading ? (
-                  <div
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: "50%",
-                      background: "#eee",
-                    }}
-                  />
+                  <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#eee" }} />
                 ) : user ? (
                   <Avatar user={user} size={32} />
                 ) : (
@@ -99,7 +98,10 @@ export default function NavBar() {
                       <div className="dropdown-header">
                         {user.firstName ? `Hi, ${user.firstName}!` : user.email}
                       </div>
-                      <a href="/profile">Profile</a>
+
+                      {/* ---- UPDATED: show Dashboard for vendors, Profile for others ---- */}
+                      <a href={menuPrimaryHref}>{menuPrimaryLabel}</a>
+
                       <button
                         className="dropdown-danger"
                         onClick={() => {
@@ -126,37 +128,24 @@ export default function NavBar() {
             </button>
 
             {/* Search trigger */}
-            <button
-              className="icon-btn"
-              aria-label="Open search"
-              onClick={() => setSearchOpen(true)}
-            >
+            <button className="icon-btn" aria-label="Open search" onClick={() => setSearchOpen(true)}>
               <FaSearch />
             </button>
           </>
         ) : (
           <form className="search" onSubmit={submitSearch}>
-            <input
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search..."
-            />
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search..." />
             <button className="search-submit" type="submit">
               <FaSearch />
             </button>
-            <button
-              type="button"
-              className="search-close"
-              onClick={() => setSearchOpen(false)}
-            >
+            <button type="button" className="search-close" onClick={() => setSearchOpen(false)}>
               <FaTimes />
             </button>
           </form>
         )}
       </div>
 
-      {/* Confirm logout modal */}
+      {/* Confirm logout */}
       <Confirm
         open={confirmOpen}
         title="Log out?"
@@ -164,7 +153,7 @@ export default function NavBar() {
         onCancel={() => setConfirmOpen(false)}
         onConfirm={async () => {
           setConfirmOpen(false);
-          await logout();              // clears cookie + resets auth context
+          await logout();
           // optional redirect:
           // window.location.href = "/";
         }}
