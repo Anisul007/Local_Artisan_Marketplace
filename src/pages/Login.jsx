@@ -128,6 +128,13 @@ export default function Login() {
 
       const code = r?.data?.code || LOGIN_ERROR_CODES.AUTH_FAILED;
 
+      if (r?.status >= 500) {
+        setErrors({
+          form: "Server error. Check that the backend is running (npm run dev in the server folder) and MongoDB is connected.",
+        });
+        return;
+      }
+
       if (r?.status === 403 && code === LOGIN_ERROR_CODES.NOT_VERIFIED) {
         // if user typed an email, send to verify
         if (user.includes("@") && isEmail(user)) {
@@ -140,7 +147,15 @@ export default function Login() {
 
       setErrors({ form: mapServerError(code), code });
     } catch (err) {
-      setErrors({ form: "Something went wrong. Please try again." });
+      const isNetworkError =
+        err?.message === "Failed to fetch" ||
+        err?.name === "TypeError" ||
+        err?.code === "ERR_NETWORK";
+      setErrors({
+        form: isNetworkError
+          ? "Can't reach the server. Start the backend (in the server folder run: npm run dev) and ensure MongoDB is running."
+          : "Something went wrong. Please try again.",
+      });
     } finally {
       setSubmitting(false);
     }

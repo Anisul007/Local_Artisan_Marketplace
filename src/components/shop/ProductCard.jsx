@@ -10,7 +10,7 @@ export default function ProductCard({ item }) {
     <Link to={`/product/${item.slug || item._id}`} className="block bg-white border rounded-xl overflow-hidden hover:shadow-md transition">
       <div className="aspect-square bg-gray-100">
         {/* eslint-disable-next-line jsx-a11y/alt-text */}
-        <img src={img} className="w-full h-full object-cover" />
+        <img src={img || "/images/placeholder.svg"} alt="" className="w-full h-full object-cover" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = "/images/placeholder.svg"; }} />
       </div>
       <div className="p-3">
         <div className="line-clamp-1 font-medium">{item.title}</div>

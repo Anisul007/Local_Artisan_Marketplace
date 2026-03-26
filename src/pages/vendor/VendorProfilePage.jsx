@@ -30,6 +30,7 @@ export default function VendorProfilePage() {
       setOpen(false);
       setToast("Profile updated");
       await fetchProfile();
+      window.dispatchEvent(new CustomEvent("vendor-profile-updated"));
       setTimeout(() => setToast(""), 1600);
     }
   }

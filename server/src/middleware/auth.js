@@ -8,7 +8,11 @@ import jwt from "jsonwebtoken";
  * - sameSite=lax works well for SPA navigation.
  */
 export function setAuthCookie(res, payload) {
-  const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET is not set. Add it to server/.env (see .env.example).");
+  }
+  const token = jwt.sign(payload, secret, { expiresIn: "7d" });
   const isProd = process.env.NODE_ENV === "production";
 
 res.cookie("aa_token", token, {
@@ -38,10 +42,14 @@ export function clearAuthCookie(res) {
  * Require a valid token in aa_token cookie.
  */
 export function requireAuth(req, res, next) {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    return res.status(500).json({ ok: false, code: "NO_JWT_SECRET" });
+  }
   const token = req.cookies?.aa_token;
   if (!token) return res.status(401).json({ ok: false, code: "NO_TOKEN" });
   try {
-    req.user = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = jwt.verify(token, secret);
     next();
   } catch {
     return res.status(401).json({ ok: false, code: "BAD_TOKEN" });

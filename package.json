@@ -4,9 +4,9 @@
   "private": true,
   "scripts": {
     "predev": "npx kill-port 5173",
-    "dev": "vite --port 5173",
-    "build": "vite build",
-    "preview": "vite preview --port 4173"
+    "dev": "npx vite --port 5173",
+    "build": "npx vite build",
+    "preview": "npx vite preview --port 4173"
   },
   "dependencies": {
     "framer-motion": "^12.23.12",

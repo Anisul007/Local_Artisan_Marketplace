@@ -8,6 +8,7 @@ import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
 import morgan from "morgan";
 import { connectDB } from "./config/db.js";
+import { verifyMailConfig } from "./utils/email.js";
 
 // Routes (existing)
 import authRoutes from "./routes/auth.js";
@@ -16,6 +17,11 @@ import listingsRoutes from "./routes/listings.js";
 import uploadsRoutes from "./routes/uploads.js";
 import reviewsRoutes from "./routes/reviews.js";
 import publicListingsRoutes from "./routes/publicListings.js";
+import ordersRoutes from "./routes/orders.js";
+import customerReviewsRoutes from "./routes/customerReviews.js";
+import publicVendorsRoutes from "./routes/publicVendors.js";
+import promotionsRoutes from "./routes/promotions.js";
+import promotionsPublicRoutes from "./routes/promotions.public.js";
 
 // Routes (new)
 import vendorProfileRoutes from "./routes/vendor.profile.js"; // exposes GET/PUT "/profile", POST "/profile/logo"
@@ -85,6 +91,7 @@ app.use("/api/categories", categoriesRoutes);
 
 // Vendor (auth enforced inside routers)
 app.use("/api/vendor/listings", listingsRoutes);
+app.use("/api/vendor/promotions", promotionsRoutes);
 app.use("/api/vendor/reviews", reviewsRoutes);
 
 // Vendor profile + dashboard helpers
@@ -98,6 +105,16 @@ app.use("/api/vendor", vendorMiscRoutes);
 
 // Public catalog (customer-facing)
 app.use("/api/listings", publicListingsRoutes);
+// Public vendor storefronts
+app.use("/api/vendors", publicVendorsRoutes);
+
+// Customer orders (auth required)
+app.use("/api/orders", ordersRoutes);
+// Coupon validation (public)
+app.use("/api/promotions", promotionsPublicRoutes);
+
+// Customer reviews (POST create, GET by listingId)
+app.use("/api/customer/reviews", customerReviewsRoutes);
 
 // Uploads (vendor-only inside the route)
 app.use("/api/uploads", uploadsRoutes);
@@ -123,7 +140,8 @@ app.use((err, _req, res, _next) => {
 /* ----------------------------- Boot server --------------------------- */
 const PORT = process.env.PORT || 4000;
 
-connectDB(process.env.MONGO_URI).then(() => {
+connectDB(process.env.MONGO_URI || "").then(async () => {
+  await verifyMailConfig();
   app.listen(PORT, () =>
     console.log(`🚀 API running at http://localhost:${PORT}`)
   );

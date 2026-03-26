@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   ArrowUpDown,
@@ -8,10 +9,13 @@ import {
   Star,
   Heart,
   ShoppingCart,
+  Check,
   Loader2,
   ChevronDown,
 } from "lucide-react";
 import { CategoriesAPI, PublicListingsAPI } from "../lib/api";
+import { useCart } from "../context/CartContext";
+import { useWishlist } from "../context/WishlistContext";
 
 /** ───────────────────────────────────────────────────────────────────────────
  * ShopHandmade.jsx — Browse marketplace (vendor-aware)
@@ -22,6 +26,7 @@ import { CategoriesAPI, PublicListingsAPI } from "../lib/api";
  * ───────────────────────────────────────────────────────────────────────────*/
 
 export default function ShopHandmade() {
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("popular");
   const [view, setView] = useState("grid");
@@ -54,6 +59,33 @@ export default function ShopHandmade() {
     fetchCategories().then(setCategories);
   }, []);
 
+  // Allow deep-linking from Home category tiles:
+  // /shop?category=home or /shop?category=home,jewellery
+  useEffect(() => {
+    const raw = searchParams.get("category") || searchParams.get("categories") || "";
+    if (!raw) return;
+    const slugs = raw
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    if (slugs.length === 0) return;
+    setSelectedCats((prev) => {
+      // Only set if different to avoid loops
+      const prevKey = prev.slice().sort().join(",");
+      const nextKey = slugs.slice().sort().join(",");
+      return prevKey === nextKey ? prev : slugs;
+    });
+  }, [searchParams]);
+
+  // When filters change, request page 1 so we don't show blank (state page may still be old)
+  const filterKey = useMemo(
+    () => [search, sort, selectedCats.join(","), min, max, rating, colors.join(","), tags.join(","), inStock, freeShipping].join("|"),
+    [search, sort, selectedCats, min, max, rating, colors, tags, inStock, freeShipping]
+  );
+  const prevFilterKeyRef = useRef(filterKey);
+  const effectivePage = prevFilterKeyRef.current !== filterKey ? 1 : page;
+  if (prevFilterKeyRef.current !== filterKey) prevFilterKeyRef.current = filterKey;
+
   // Reset results when filters change
   useEffect(() => {
     setItems([]);
@@ -69,7 +101,7 @@ export default function ShopHandmade() {
     (async () => {
       setLoading(true);
       const { items: newItems, nextPage: np, total: t } = await fetchProducts({
-        page,
+        page: effectivePage,
         perPage: 24,
         search,
         sort,
@@ -83,7 +115,7 @@ export default function ShopHandmade() {
         freeShipping,
       });
       if (!ignore) {
-        setItems((prev) => (page === 1 ? newItems : [...prev, ...newItems]));
+        setItems((prev) => (effectivePage === 1 ? newItems : [...prev, ...newItems]));
         setNextPage(np);
         setTotal(t ?? 0);
         setFirstLoad(false);
@@ -92,7 +124,7 @@ export default function ShopHandmade() {
     })();
     return () => { ignore = true; };
   }, [
-    page, search, sort, selectedCats.join(","), min, max, rating,
+    effectivePage, page, search, sort, selectedCats.join(","), min, max, rating,
     colors.join(","), tags.join(","), inStock, freeShipping
   ]);
 
@@ -377,7 +409,7 @@ function VendorChip({ name = "Unknown maker", logo }) {
   return (
     <div className="mt-1 flex items-center gap-2 text-xs text-gray-600">
       <div className="grid h-5 w-5 place-items-center overflow-hidden rounded-full bg-gray-100">
-        {logo ? <img src={logo} className="h-full w-full object-cover" /> : <span className="text-[10px] font-semibold">{(name || "?").slice(0,2).toUpperCase()}</span>}
+        {logo ? <img src={logo} alt="" className="h-full w-full object-cover" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = "/images/placeholder.svg"; }} /> : <span className="text-[10px] font-semibold">{(name || "?").slice(0,2).toUpperCase()}</span>}
       </div>
       <span className="truncate">by {name}</span>
     </div>
@@ -385,13 +417,36 @@ function VendorChip({ name = "Unknown maker", logo }) {
 }
 
 function ProductCard({ product }) {
+  const { addItem, items } = useCart();
+  const { toggle: toggleWishlist, has: hasWishlist } = useWishlist();
+  const to = `/product/${product.slug || product.id}`;
+  const priceCents = Math.round((product.price || 0) * 100);
+  const cartEntry = items?.find(
+    (i) => i.listingId === product.id || (product.slug && i.slug === product.slug)
+  );
+  const cartQty = Number(cartEntry?.quantity || 0);
+  const inCart = cartQty > 0;
+  const addToCart = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    addItem({
+      listingId: product.id,
+      slug: product.slug,
+      title: product.name,
+      priceCents,
+      quantity: 1,
+      imageUrl: product.images?.[0]?.url || "",
+    });
+  };
   return (
     <motion.article whileHover={{ y: -4 }} className="group overflow-hidden rounded-2xl border border-gray-200 bg-white hover:shadow-lg">
+      <Link to={to} className="block">
       <div className="relative aspect-square overflow-hidden">
         <img
-          src={product.images?.[0]?.url || "/images/placeholder.png"}
+          src={product.images?.[0]?.url || "/images/placeholder.svg"}
           alt={product.name}
           className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+          onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = "/images/placeholder.svg"; }}
         />
         <div className="absolute inset-0 opacity-0 transition group-hover:opacity-100 bg-gradient-to-t from-black/40 via-black/0 to-transparent" />
         <div className="absolute top-2 left-2 flex gap-1">
@@ -402,11 +457,41 @@ function ProductCard({ product }) {
           ))}
         </div>
         <div className="absolute bottom-3 right-3 flex items-center gap-2 opacity-0 transition group-hover:opacity-100">
-          <button className="rounded-lg bg-purple-600 p-2 text-white hover:bg-purple-700">
-            <Heart className="h-4 w-4" />
+          <button
+            type="button"
+            className="rounded-lg bg-purple-600 p-2 text-white hover:bg-purple-700"
+            aria-label="Wishlist"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleWishlist({
+                listingId: product.id,
+                slug: product.slug,
+                title: product.name,
+                priceCents,
+                currency: "AUD",
+                imageUrl: product.images?.[0]?.url || "",
+                maker: product.maker,
+              });
+            }}
+          >
+            <Heart className={`h-4 w-4 ${hasWishlist(product.id) || hasWishlist(product.slug) ? "fill-current" : ""}`} />
           </button>
-          <button className="rounded-lg bg-purple-600 p-2 text-white hover:bg-purple-700">
-            <ShoppingCart className="h-4 w-4" />
+          <button
+            type="button"
+            className={`flex items-center gap-1 rounded-lg p-2 text-white transition ${
+              inCart ? "bg-emerald-600 hover:bg-emerald-700" : "bg-purple-600 hover:bg-purple-700"
+            }`}
+            aria-label={inCart ? "Added to cart" : "Add to cart"}
+            onClick={addToCart}
+            title={inCart ? "Added" : "Add to cart"}
+          >
+            {inCart ? <Check className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}
+            {cartQty > 1 && (
+              <span className="ml-2 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-emerald-900/30 px-1 text-[10px] font-bold leading-none ring-1 ring-emerald-600/40">
+                x{cartQty}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -426,15 +511,38 @@ function ProductCard({ product }) {
           </div>
         )}
       </div>
+      </Link>
     </motion.article>
   );
 }
 
 function ProductRow({ product }) {
+  const { addItem, items } = useCart();
+  const { toggle: toggleWishlist, has: hasWishlist } = useWishlist();
+  const to = `/product/${product.slug || product.id}`;
+  const priceCents = Math.round((product.price || 0) * 100);
+  const cartEntry = items?.find(
+    (i) => i.listingId === product.id || (product.slug && i.slug === product.slug)
+  );
+  const cartQty = Number(cartEntry?.quantity || 0);
+  const inCart = cartQty > 0;
+  const addToCart = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    addItem({
+      listingId: product.id,
+      slug: product.slug,
+      title: product.name,
+      priceCents,
+      quantity: 1,
+      imageUrl: product.images?.[0]?.url || "",
+    });
+  };
   return (
     <motion.article whileHover={{ y: -2 }} className="group flex overflow-hidden rounded-2xl border border-gray-200 bg-white hover:shadow-md">
+      <Link to={to} className="flex flex-1 min-w-0">
       <div className="relative aspect-square w-44 shrink-0 overflow-hidden">
-        <img src={product.images?.[0]?.url || "/images/placeholder.png"} alt={product.name} className="h-full w-full object-cover transition group-hover:scale-105" />
+        <img src={product.images?.[0]?.url || "/images/placeholder.svg"} alt={product.name} className="h-full w-full object-cover transition group-hover:scale-105" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = "/images/placeholder.svg"; }} />
       </div>
       <div className="flex-1 p-4">
         <div className="flex items-start justify-between gap-3">
@@ -457,16 +565,41 @@ function ProductRow({ product }) {
           <div className="flex flex-col items-end gap-2">
             <Price price={product.price} sale={product.salePrice} size="lg" />
             <div className="flex items-center gap-2">
-              <button className="rounded-lg bg-purple-600 p-2 text-white hover:bg-purple-700">
-                <Heart className="h-4 w-4" />
+              <button
+                type="button"
+                className="rounded-lg bg-purple-600 p-2 text-white hover:bg-purple-700"
+                aria-label="Wishlist"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  toggleWishlist({
+                    listingId: product.id,
+                    slug: product.slug,
+                    title: product.name,
+                    priceCents,
+                    currency: "AUD",
+                    imageUrl: product.images?.[0]?.url || "",
+                    maker: product.maker,
+                  });
+                }}
+              >
+                <Heart className={`h-4 w-4 ${hasWishlist(product.id) || hasWishlist(product.slug) ? "fill-current" : ""}`} />
               </button>
-              <button className="flex items-center gap-2 rounded-lg bg-purple-600 px-3 py-2 font-semibold text-white hover:bg-purple-700">
-                <ShoppingCart className="h-4 w-4" /> Add
+              <button
+                type="button"
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 font-semibold text-white transition ${
+                  inCart ? "bg-emerald-600 hover:bg-emerald-700" : "bg-purple-600 hover:bg-purple-700"
+                }`}
+                onClick={addToCart}
+              >
+                {inCart ? <Check className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}{" "}
+                {inCart ? `Added${cartQty > 1 ? ` (${cartQty})` : ""}` : "Add"}
               </button>
             </div>
           </div>
         </div>
       </div>
+      </Link>
     </motion.article>
   );
 }
@@ -540,16 +673,17 @@ async function fetchCategories() {
 }
 
 async function fetchProducts(query) {
-  // Map UI filters => API params
+  const page = Math.max(1, parseInt(query.page, 10) || 1);
+  const categoryParam = Array.isArray(query.categories) && query.categories.length > 0
+    ? query.categories.join(",")
+    : "";
   const params = {
-    q: query.search || "",
-    category: (query.categories && query.categories[0]) || "",
-    page: query.page || 1,
-    min: query.min ? query.min * 100 : "",
-    max: query.max ? query.max * 100 : "",
-    // If your backend supports it, you can pass sort/status here
-    // sort: query.sort,
-    // status: "active",
+    q: (query.search || "").trim(),
+    category: categoryParam,
+    page,
+    min: query.min != null && query.min !== "" ? Number(query.min) * 100 : "",
+    max: query.max != null && query.max !== "" ? Number(query.max) * 100 : "",
+    sort: query.sort || "newest",
   };
 
   const res = await PublicListingsAPI.browse(params).catch(() => ({ data: null }));
@@ -574,14 +708,15 @@ async function fetchProducts(query) {
 
       return {
         id: p._id || p.id || p.seo?.slug || Math.random().toString(36).slice(2),
+        slug: p.seo?.slug || p._id?.toString?.() || p.id,
         name: p.title || "Untitled",
         price: (p?.pricing?.priceCents || 0) / 100,
-        salePrice: null, // adapt if you add promos
+        salePrice: null,
         rating: p.ratingAvg || 0,
         reviewCount: p.ratingsCount || 0,
         images: img ? [{ url: img }] : [],
         badges: p.inventory?.status === "out_of_stock" ? ["Out of stock"] : [],
-        maker: p.vendor?.businessName || p.vendor?.displayName || p.vendor?.name || "Unknown maker",
+        maker: p.vendor?.businessName || p.vendor?.displayName || p.vendor?.name || "Artisan",
         vendorLogo: p.vendor?.logoUrl || p.vendor?.avatarUrl || "",
         tags: p.tags || [],
         colors: p.colors || [],

@@ -71,13 +71,12 @@ export const AuthAPI = {
 
 // ---- Catalog (public) ----
 export const PublicListingsAPI = {
-  list: ({ q = "", category = "", page = 1, min = "", max = "" } = {}) =>
-    apiGet(`listings${qs({ q, category, page, min, max })}`),
+  list: ({ q = "", category = "", page = 1, min = "", max = "", sort = "", vendor = "" } = {}) =>
+    apiGet(`listings${qs({ q, category, page, min, max, sort, vendor })}`),
   read: (idOrSlug) => apiGet(`listings/${idOrSlug}`),
 
-  // aliases (legacy)
-  browse: ({ q = "", category = "", page = 1, min = "", max = "" } = {}) =>
-    apiGet(`listings${qs({ q, category, page, min, max })}`),
+  browse: ({ q = "", category = "", page = 1, min = "", max = "", sort = "", vendor = "" } = {}) =>
+    apiGet(`listings${qs({ q, category, page, min, max, sort, vendor })}`),
   bySlug: (slug) => apiGet(`listings/${slug}`),
 };
 
@@ -85,6 +84,13 @@ export const PublicListingsAPI = {
 export const CategoriesAPI = {
   all:  () => apiGet("categories"),
   list: () => apiGet("categories"), // alias
+};
+
+// ---- Public vendor storefront ----
+export const PublicVendorsAPI = {
+  get: (id) => apiGet(`vendors/${id}`),
+  reviews: (id, { page = 1, limit = 10 } = {}) =>
+    apiGet(`vendors/${id}/reviews${qs({ page, limit })}`),
 };
 
 // ---- Vendor Listings (requires auth cookie) ----
@@ -100,6 +106,19 @@ export const ListingsAPI = {
   publish:   (id)         => apiPost(`vendor/listings/${id}/publish`, {}),
   setStatus: (id, status) => apiPost(`vendor/listings/${id}/status`, { status }),
 };
+
+// ---- Vendor Promotions (auth required) ----
+export const PromotionsAPI = {
+  list: () => apiGet("vendor/promotions"),
+  get: (id) => apiGet(`vendor/promotions/${id}`),
+  create: (payload) => apiPost("vendor/promotions", payload),
+  update: (id, payload) => apiPut(`vendor/promotions/${id}`, payload),
+  delete: (id) => apiDelete(`vendor/promotions/${id}`),
+};
+
+// ---- Coupon validation (public, for cart/checkout) ----
+export const validateCoupon = (code, cartItems) =>
+  apiPost("promotions/validate", { code, items: cartItems });
 
 // ---- Vendor Reviews (read-only for Sprint 2) ----
 export const ReviewsAPI = {
@@ -123,15 +142,26 @@ export const UploadsAPI = {
 
 export const VendorAPI = {
   getProfile: () => apiGet("/api/vendor/profile"),
-
-  // JSON update (no file here)
   updateProfile: (payload) => apiPut("/api/vendor/profile", payload),
-
-  // multipart upload for logo (returns { ok:true, data:{ url } })
   uploadLogo: (file) => {
     const fd = new FormData();
-    fd.append("logo", file);
-    return apiPost("/api/vendor/profile/logo", fd, { isMultipart: true });
+    // Backend expects multer field name: uploadLogo.single("file")
+    fd.append("file", file);
+    return apiUpload("/api/vendor/profile/logo", fd);
   },
+};
+
+// ---- Customer Orders (auth required) ----
+export const OrdersAPI = {
+  create: (body) => apiPost("orders", body),
+  list: () => apiGet("orders"),
+  get: (id) => apiGet(`orders/${id}`),
+};
+
+// ---- Customer Reviews (auth for POST) ----
+export const CustomerReviewsAPI = {
+  create: (body) => apiPost("customer/reviews", body),
+  list: (listingId, page = 1, limit = 10) =>
+    apiGet(`customer/reviews${qs({ listingId, page, limit })}`),
 };
 

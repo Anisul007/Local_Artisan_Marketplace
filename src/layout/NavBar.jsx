@@ -1,17 +1,36 @@
 // src/layout/NavBar.jsx
 import React, { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { useCart } from "../context/CartContext";
+import { useWishlist } from "../context/WishlistContext";
 import Avatar from "../components/ux/Avatar";
 import Confirm from "../components/ux/Confirm";
+import { VendorAPI } from "../lib/api";
 import "./Navbar.css";
-import { FaUser, FaHeart, FaShoppingCart, FaSearch, FaTimes } from "react-icons/fa";
+import {
+  FaUser,
+  FaHeart,
+  FaShoppingCart,
+  FaSearch,
+  FaTimes,
+  FaTachometerAlt,
+  FaClipboardList,
+  FaStore,
+  FaBoxOpen,
+  FaTruck,
+} from "react-icons/fa";
 
 export default function NavBar() {
   const { user, loading, logout } = useAuth();
+  const { cartCount } = useCart();
+  const { count: wishlistCount } = useWishlist();
   const [showAccount, setShowAccount] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [q, setQ] = useState("");
+  const [vendorLogoUrl, setVendorLogoUrl] = useState(null);
+  const isVendor = !!(user && (user.role === "vendor" || user.isVendor === true));
 
   const accountRef = useRef(null);
 
@@ -36,15 +55,27 @@ export default function NavBar() {
     };
   }, []);
 
+  // Vendor logo for header avatar (when logged in as vendor)
+  useEffect(() => {
+    if (!user || !isVendor) {
+      setVendorLogoUrl(null);
+      return;
+    }
+    VendorAPI.getProfile()
+      .then((r) => {
+        const data = r?.data?.data ?? r?.data;
+        const url = data?.logoUrl || null;
+        setVendorLogoUrl(url || null);
+      })
+      .catch(() => setVendorLogoUrl(null));
+  }, [user, isVendor]);
+
   function submitSearch(e) {
     e.preventDefault();
     alert("Searching: " + q); // TODO: replace with real navigation
   }
 
-  // ---- NEW: vendor check + menu target ----
-  const isVendor = !!(user && (user.role === "vendor" || user.isVendor === true));
-  const menuPrimaryLabel = isVendor ? "Dashboard" : "Profile";
-  const menuPrimaryHref = isVendor ? "/vendor/dashboard" : "/profile";
+  const vendorPublicId = user?.id || user?._id;
 
   return (
     <header className="navbar">
@@ -80,7 +111,7 @@ export default function NavBar() {
                 {loading ? (
                   <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#eee" }} />
                 ) : user ? (
-                  <Avatar user={user} size={32} />
+                  <Avatar user={user} size={32} imageUrl={vendorLogoUrl} />
                 ) : (
                   <FaUser />
                 )}
@@ -99,8 +130,97 @@ export default function NavBar() {
                         {user.firstName ? `Hi, ${user.firstName}!` : user.email}
                       </div>
 
-                      {/* ---- UPDATED: show Dashboard for vendors, Profile for others ---- */}
-                      <a href={menuPrimaryHref}>{menuPrimaryLabel}</a>
+                      {isVendor ? (
+                        <>
+                          <div className="dropdown-subheader">Vendor</div>
+                          <div className="dropdown-grid">
+                            <Link
+                              to="/vendor/dashboard"
+                              className="dropdown-item"
+                              onClick={() => setShowAccount(false)}
+                            >
+                              <span className="dropdown-item-icon">
+                                <FaTachometerAlt />
+                              </span>
+                              <span>Dashboard</span>
+                            </Link>
+                            <Link
+                              to="/vendor/listings"
+                              className="dropdown-item"
+                              onClick={() => setShowAccount(false)}
+                            >
+                              <span className="dropdown-item-icon">
+                                <FaBoxOpen />
+                              </span>
+                              <span>My listings</span>
+                            </Link>
+                            {vendorPublicId && (
+                              <Link
+                                to={`/makers/${vendorPublicId}?tab=products`}
+                                className="dropdown-item"
+                                onClick={() => setShowAccount(false)}
+                              >
+                                <span className="dropdown-item-icon">
+                                  <FaStore />
+                                </span>
+                                <span>Preview storefront</span>
+                              </Link>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="dropdown-subheader">Account</div>
+                          <div className="dropdown-grid">
+                            <Link
+                              to="/orders"
+                              className="dropdown-item"
+                              onClick={() => setShowAccount(false)}
+                            >
+                              <span className="dropdown-item-icon">
+                                <FaClipboardList />
+                              </span>
+                              <span>My orders</span>
+                            </Link>
+                            <Link
+                              to="/cart"
+                              className="dropdown-item"
+                              onClick={() => setShowAccount(false)}
+                            >
+                              <span className="dropdown-item-icon">
+                                <FaShoppingCart />
+                              </span>
+                              <span>Cart</span>
+                              {cartCount > 0 && (
+                                <span className="dropdown-badge">{cartCount > 99 ? "99+" : cartCount}</span>
+                              )}
+                            </Link>
+                            <Link
+                              to="/wishlist"
+                              className="dropdown-item"
+                              onClick={() => setShowAccount(false)}
+                            >
+                              <span className="dropdown-item-icon">
+                                <FaHeart />
+                              </span>
+                              <span>Wishlist</span>
+                              {wishlistCount > 0 && (
+                                <span className="dropdown-badge">{wishlistCount > 99 ? "99+" : wishlistCount}</span>
+                              )}
+                            </Link>
+                            <a
+                              href="/contact"
+                              className="dropdown-item"
+                              onClick={() => setShowAccount(false)}
+                            >
+                              <span className="dropdown-item-icon">
+                                <FaTruck />
+                              </span>
+                              <span>Help & contact</span>
+                            </a>
+                          </div>
+                        </>
+                      )}
 
                       <button
                         className="dropdown-danger"
@@ -118,14 +238,20 @@ export default function NavBar() {
             </div>
 
             {/* Wishlist */}
-            <button className="icon-btn" aria-label="Wishlist">
+            <Link to="/wishlist" className="icon-btn icon-btn-wishlist" aria-label="Wishlist">
               <FaHeart />
-            </button>
+              {wishlistCount > 0 && (
+                <span className="cart-badge">{wishlistCount > 99 ? "99+" : wishlistCount}</span>
+              )}
+            </Link>
 
             {/* Cart */}
-            <button className="icon-btn" aria-label="Cart">
+            <Link to="/cart" className="icon-btn icon-btn-cart" aria-label="Cart">
               <FaShoppingCart />
-            </button>
+              {cartCount > 0 && (
+                <span className="cart-badge">{cartCount > 99 ? "99+" : cartCount}</span>
+              )}
+            </Link>
 
             {/* Search trigger */}
             <button className="icon-btn" aria-label="Open search" onClick={() => setSearchOpen(true)}>

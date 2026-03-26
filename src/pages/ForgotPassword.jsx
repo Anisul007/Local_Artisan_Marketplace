@@ -66,11 +66,13 @@ export default function ForgotPassword() {
     setSubmitting(false);
     if (res.ok && res.data.ok) {
       setStep(2);
-      setMsg("We sent a 6-character code to your email."); // ★ changed copy
+      setMsg("We sent a 6-character code to your email.");
       setCooldown(30);
       setTimeout(() => inputs.current[0]?.focus(), 60);
     } else {
-      setErr(res?.data?.message || "Something went wrong. Try again.");
+      const code = res?.data?.code;
+      if (code === "ERR_EMAIL_NOT_REGISTERED") setErr("No account found with this email. Please check the address or sign up.");
+      else setErr(res?.data?.message || "Something went wrong. Try again.");
     }
   }
 
@@ -115,7 +117,8 @@ export default function ForgotPassword() {
       setMsg("Code re-sent. Check your inbox.");
       setCooldown(30);
     } else {
-      setErr("Could not resend. Try again later.");
+      if (res?.data?.code === "ERR_EMAIL_NOT_REGISTERED") setErr("No account found with this email.");
+      else setErr("Could not resend. Try again later.");
     }
   }
 

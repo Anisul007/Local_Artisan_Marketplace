@@ -22,9 +22,9 @@ function normalizeEmail(e = "") {
   return (e || "").toLowerCase().trim();
 }
 
-// Alphanumeric **UPPERCASE** OTP (for both verify + reset)
+// Alphanumeric **UPPERCASE** OTP – exclude 0/O and 1/I to avoid confusion when typing
 function generateOTP(length = 6) {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let otp = "";
   for (let i = 0; i < length; i++) {
     otp += chars.charAt(Math.floor(Math.random() * chars.length));
@@ -105,22 +105,22 @@ router.post("/register", async (req, res) => {
     // Create user (unverified)
     const user = await User.create(doc);
 
-    // Generate & store **UPPERCASE alphanumeric** OTP (hashed) with 10 min expiry
+    // Generate & store **UPPERCASE alphanumeric** OTP (hashed) – valid for 5 minutes
+    const OTP_EXPIRY_MIN = 5;
     const code = generateOTP(6); // e.g. "AB3XZ7"
     user.verifyCodeHash = await bcrypt.hash(code, 10);
-    user.verifyCodeExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    user.verifyCodeExpires = new Date(Date.now() + OTP_EXPIRY_MIN * 60 * 1000);
     user.lastVerifyEmailAt = new Date();
     await user.save();
 
-    // Email the OTP via SMTP creds from .env
     await sendMail({
       to: user.email,
       subject: "Verify your Artisan Avenue account",
-      text: `Your verification code is: ${code}\nThis code expires in 10 minutes.`,
+      text: `Your verification code is: ${code}\nThis code expires in ${OTP_EXPIRY_MIN} minutes.`,
       html: `
         <p>Use this code to verify your email:</p>
         <p style="font-size:24px;font-weight:bold;letter-spacing:3px">${code}</p>
-        <p>This code expires in <b>10 minutes</b>.</p>
+        <p>This code expires in <b>${OTP_EXPIRY_MIN} minutes</b>.</p>
       `,
     });
 
@@ -141,7 +141,10 @@ router.post("/verify-email", async (req, res) => {
     const { email, code } = req.body || {};
     if (!email || !code) return sendErr(res, 400, ERR.REQUIRED, "email/code required");
 
-    const user = await User.findOne({ email: normalizeEmail(email) });
+    // Need verifyCodeHash/verifyCodeExpires here even though they are select:false in the schema
+    const user = await User.findOne({ email: normalizeEmail(email) }).select(
+      "+verifyCodeHash +verifyCodeExpires"
+    );
     if (!user) return sendErr(res, 400, "ERR_NO_USER", "user not found");
     if (user.isVerified) {
       setAuthCookie(res, user.safe());
@@ -197,7 +200,9 @@ router.post("/verify-email/resend", async (req, res) => {
     const { email } = req.body || {};
     if (!email) return sendErr(res, 400, ERR.REQUIRED, "email required");
 
-    const user = await User.findOne({ email: normalizeEmail(email) });
+    const user = await User.findOne({ email: normalizeEmail(email) }).select(
+      "+resetCodeHash +resetCodeExpires +resetCodeAttempts"
+    );
     if (!user) return res.json({ ok: true }); // don't leak
     if (user.isVerified) return res.json({ ok: true });
 
@@ -206,20 +211,21 @@ router.post("/verify-email/resend", async (req, res) => {
       return res.json({ ok: true, message: "Please wait a minute before resending." });
     }
 
-    const code = generateOTP(6); // uppercase alphanumeric
+    const OTP_EXPIRY_MIN = 5;
+    const code = generateOTP(6);
     user.verifyCodeHash = await bcrypt.hash(code, 10);
-    user.verifyCodeExpires = new Date(Date.now() + 10 * 60 * 1000);
+    user.verifyCodeExpires = new Date(Date.now() + OTP_EXPIRY_MIN * 60 * 1000);
     user.lastVerifyEmailAt = new Date();
     await user.save();
 
     await sendMail({
       to: user.email,
       subject: "Your new Artisan Avenue verification code",
-      text: `Your verification code is: ${code}\nThis code expires in 10 minutes.`,
+      text: `Your verification code is: ${code}\nThis code expires in ${OTP_EXPIRY_MIN} minutes.`,
       html: `
         <p>Your new verification code:</p>
         <p style="font-size:24px;font-weight:bold;letter-spacing:3px">${code}</p>
-        <p>This code expires in <b>10 minutes</b>.</p>
+        <p>This code expires in <b>${OTP_EXPIRY_MIN} minutes</b>.</p>
       `,
     });
 
@@ -280,10 +286,10 @@ router.get("/me", requireAuth, async (req, res) => {
 router.post("/forgot/start", async (req, res) => {
   try {
     const { email } = req.body || {};
-    if (!email || !isEmail(email)) return res.json({ ok: true });
+    if (!email || !isEmail(email)) return sendErr(res, 400, ERR.REQUIRED, "Valid email required");
 
     const user = await User.findOne({ email: normalizeEmail(email) });
-    if (!user) return res.json({ ok: true });
+    if (!user) return sendErr(res, 404, "ERR_EMAIL_NOT_REGISTERED", "No account found with this email.");
 
     // simple throttle: 60s between requests
     const now = new Date();

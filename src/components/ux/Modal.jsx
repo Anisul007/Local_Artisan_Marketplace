@@ -39,35 +39,20 @@ export default function Modal({ open, onClose, children }) {
         onClick={open ? onClose : undefined}
       />
 
-      {/* Scrollable viewport */}
-      <div className="absolute inset-0 overflow-y-auto">
-        {/* Centering wrapper (pads on small screens, centers on md+) */}
-        <div className="flex min-h-full items-start md:items-center justify-center p-4 md:p-8">
-          {/* Dialog */}
+      {/* Viewport: overflow hidden so form controls its own scroll */}
+      <div className="absolute inset-0 overflow-y-auto overflow-x-hidden">
+        <div className="flex min-h-full items-start justify-center p-4 md:p-6 md:py-8">
           <div
-            className={`relative w-full max-w-5xl rounded-2xl bg-white shadow-xl ring-1 ring-black/5 transition-all duration-200
+            className={`relative flex w-full max-w-3xl flex-col rounded-2xl bg-white shadow-xl ring-1 ring-black/5 transition-all duration-200
               ${open ? "opacity-100 scale-100" : "opacity-0 scale-95"}
             `}
+            style={{ maxHeight: "min(90vh, 800px)" }}
             role="dialog"
             aria-modal="true"
           >
-            {/* Close button */}
-            <button
-              type="button"
-              onClick={onClose}
-              className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 hover:text-gray-900"
-              aria-label="Close"
-              tabIndex={open ? 0 : -1}
-            >
-              ✕
-            </button>
-
-            {/* Content area (this can be tall; it will scroll within the viewport) */}
-            <div className="max-h-[80vh] overflow-y-auto p-4 md:p-6">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {children}
             </div>
-
-            {/* Optional sticky footer slot (if your child form needs a bottom bar, move it inside children) */}
           </div>
         </div>
       </div>

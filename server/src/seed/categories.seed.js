@@ -22,7 +22,7 @@ async function main() {
   for (const c of DATA) {
     await Category.updateOne(
       { slug: c.slug },
-      { $set: c },
+      { $set: { ...c, isActive: true } },
       { upsert: true }
     );
   }

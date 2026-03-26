@@ -1,10 +1,10 @@
-export default function Avatar({ user, size = 36 }) {
+export default function Avatar({ user, size = 36, imageUrl }) {
   const name = [user?.firstName, user?.lastName].filter(Boolean).join(" ").trim();
   const initials = name
     ? name.split(/\s+/).slice(0, 2).map(s => s[0].toUpperCase()).join("")
     : (user?.username?.[0] || "?").toUpperCase();
 
-  const url = user?.avatarUrl; // add this field later if/when you store profile photos
+  const url = imageUrl ?? user?.avatarUrl;
 
   if (url) {
     return (

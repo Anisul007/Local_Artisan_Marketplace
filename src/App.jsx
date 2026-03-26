@@ -19,9 +19,15 @@ import VerifyEmail from "./pages/VerifyEmail";
 import Contact from "./pages/Contact";
 import ShopHandmade from "./pages/ShopHandmade";
 import Product from "./pages/Product.jsx";
+import VendorStorefront from "./pages/VendorStorefront.jsx";
+import Wishlist from "./pages/Wishlist.jsx";
+import Cart from "./pages/Cart.jsx";
+import Checkout from "./pages/Checkout.jsx";
+import OrderSuccess from "./pages/OrderSuccess.jsx";
+import MyOrders from "./pages/MyOrders.jsx";
 
 // -------- Vendor pages --------
-import VendorDashboard from "./pages/vendor/VendorDashboard.jsx";
+import VendorDashboardBackoffice from "./pages/vendor/VendorDashboardBackoffice.jsx";
 import VendorListingsPage from "./pages/vendor/VendorListingsPage.jsx";
 import ListingEditorPage from "./pages/vendor/ListingEditorPage.jsx";
 import ListingPreviewPage from "./pages/vendor/ListingPreviewPage.jsx";
@@ -53,6 +59,12 @@ export default function App() {
             <Route path="/blog" element={<BlogPage />} />
             <Route path="/shop" element={<ShopHandmade />} />
             <Route path="/product/:slug" element={<Product />} />
+            <Route path="/makers/:vendorId" element={<VendorStorefront />} />
+            <Route path="/wishlist" element={<Wishlist />} />
+            <Route path="/cart" element={<Cart />} />
+            <Route path="/checkout" element={<Checkout />} />
+            <Route path="/orders" element={<MyOrders />} />
+            <Route path="/orders/:orderId/success" element={<OrderSuccess />} />
             <Route path="/for-vendors" element={<ForVendorsPage />} />
             <Route path="/contact" element={<Contact />} />
             <Route path="/login" element={<Login />} />
@@ -71,7 +83,7 @@ export default function App() {
             }
           >
             <Route index element={<Navigate to="dashboard" replace />} />
-            <Route path="dashboard" element={<VendorDashboard />} />
+            <Route path="dashboard" element={<VendorDashboardBackoffice />} />
             <Route path="listings" element={<VendorListingsPage />} />
             <Route path="listings/new" element={<ListingEditorPage isNew />} />
             <Route path="listings/:id/edit" element={<ListingEditorPage />} />

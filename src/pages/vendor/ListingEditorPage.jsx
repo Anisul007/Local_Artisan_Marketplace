@@ -4,39 +4,48 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ListingsAPI, CategoriesAPI } from "../../lib/api";
 import ImageUploader from "../../components/vendor/ImageUploader.jsx";
 
-/** The 10 storefront categories we support */
 const OFFICIAL_SLUGS = [
-  "accessories",
-  "art-prints",
-  "body-beauty",
-  "fashion",
-  "home",
-  "jewellery",
-  "kids",
-  "occasion",
-  "pantry",
-  "pets",
+  "accessories", "art-prints", "body-beauty", "fashion", "home",
+  "jewellery", "kids", "occasion", "pantry", "pets",
 ];
 
 const LABELS = {
-  "accessories": "Accessories",
+  accessories: "Accessories",
   "art-prints": "Art & Prints",
   "body-beauty": "Body & Beauty",
-  "fashion": "Fashion",
-  "home": "Home",
-  "jewellery": "Jewellery",
-  "kids": "Kids",
-  "occasion": "Occasion",
-  "pantry": "Pantry",
-  "pets": "Pets",
+  fashion: "Fashion",
+  home: "Home",
+  jewellery: "Jewellery",
+  kids: "Kids",
+  occasion: "Occasion",
+  pantry: "Pantry",
+  pets: "Pets",
 };
 
 const money = (cents, cur = "AUD") =>
   new Intl.NumberFormat(undefined, { style: "currency", currency: cur })
     .format((Number(cents) || 0) / 100);
 
+const dollarsToCents = (dollars) => Math.round(Number(dollars) * 100) || 0;
+const centsToDollars = (cents) => (Number(cents) || 0) / 100;
+
 const clampCats = (primaryId, selectedIds, max = 3) =>
   Array.from(new Set([primaryId, ...selectedIds].filter(Boolean))).slice(0, max);
+
+const FormSection = ({ step, title, description, children }) => (
+  <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+    <div className="mb-5 flex items-start gap-4">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-100 text-sm font-bold text-indigo-700">
+        {step}
+      </div>
+      <div>
+        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        {description && <p className="mt-0.5 text-sm text-gray-500">{description}</p>}
+      </div>
+    </div>
+    {children}
+  </section>
+);
 
 export default function ListingEditorPage({ isNew }) {
   const { id } = useParams();
@@ -46,27 +55,27 @@ export default function ListingEditorPage({ isNew }) {
   const [form, setForm] = useState({
     title: "",
     description: "",
-    pricing: { currency: "AUD", priceCents: 0, compareAtCents: 0 },
+    priceDollars: "",
+    compareAtDollars: "",
+    currency: "AUD",
     primaryCategory: "",
     categories: [],
     images: [],
-    inventory: { stockQty: 0 },
+    stockQty: 0,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [touched, setTouched] = useState({ title: false, description: false, price: false });
 
-  // Load categories (server returns array in data or data.data)
   useEffect(() => {
     CategoriesAPI.all()
       .then((r) => {
-        const arr = Array.isArray(r?.data) ? r.data :
-                    Array.isArray(r?.data?.data) ? r.data.data : [];
+        const arr = Array.isArray(r?.data) ? r.data : Array.isArray(r?.data?.data) ? r.data.data : [];
         setCats(arr);
       })
       .catch(() => setCats([]));
   }, []);
 
-  // Load doc if editing
   useEffect(() => {
     if (!isNew && id) {
       ListingsAPI.read(id).then((r) => {
@@ -75,26 +84,38 @@ export default function ListingEditorPage({ isNew }) {
         setForm({
           title: doc.title ?? "",
           description: doc.description ?? "",
-          pricing: {
-            currency: doc.pricing?.currency || "AUD",
-            priceCents: doc.pricing?.priceCents ?? 0,
-            compareAtCents: doc.pricing?.compareAtCents ?? 0,
-          },
+          priceDollars: doc.pricing?.priceCents != null ? String(centsToDollars(doc.pricing.priceCents)) : "",
+          compareAtDollars: doc.pricing?.compareAtCents ? String(centsToDollars(doc.pricing.compareAtCents)) : "",
+          currency: doc.pricing?.currency || "AUD",
           primaryCategory: doc.primaryCategory ?? "",
           categories: doc.categories ?? [],
           images: doc.images ?? [],
-          inventory: { stockQty: doc.inventory?.stockQty ?? 0 },
+          stockQty: doc.inventory?.stockQty ?? 0,
         });
       });
     }
   }, [id, isNew]);
 
-  const canSave = useMemo(() => {
-    const p = Number(form.pricing?.priceCents) || 0;
-    return form.title?.trim() && form.description?.trim() && p > 0 && form.primaryCategory;
-  }, [form]);
+  const priceCents = useMemo(() => dollarsToCents(form.priceDollars), [form.priceDollars]);
+  const compareAtCents = useMemo(() => dollarsToCents(form.compareAtDollars), [form.compareAtDollars]);
 
-  // cat lookup
+  const canSave = useMemo(() => {
+    return (
+      form.title?.trim() &&
+      form.description?.trim() &&
+      priceCents > 0 &&
+      form.primaryCategory
+    );
+  }, [form.title, form.description, priceCents, form.primaryCategory]);
+
+  const validation = useMemo(() => {
+    const v = {};
+    if (touched.title && !form.title?.trim()) v.title = "Title is required.";
+    if (touched.description && !form.description?.trim()) v.description = "Description is required.";
+    if (touched.price && priceCents <= 0) v.price = "Enter a valid price greater than 0.";
+    return v;
+  }, [touched, form.title, form.description, priceCents]);
+
   const bySlug = useMemo(() => {
     const m = new Map();
     cats.forEach((c) => c?.slug && m.set(c.slug, c));
@@ -124,14 +145,17 @@ export default function ListingEditorPage({ isNew }) {
   };
 
   const save = async () => {
-    setSaving(true); setError("");
+    setTouched({ title: true, description: true, price: true });
+    if (!canSave) return;
+    setSaving(true);
+    setError("");
     try {
       if (isNew) {
         const payload = {
           title: form.title.trim(),
           description: form.description.trim(),
-          priceCents: Number(form.pricing.priceCents),
-          currency: form.pricing.currency || "AUD",
+          priceCents,
+          currency: form.currency || "AUD",
           primaryCategory: form.primaryCategory,
           categories: form.categories?.length ? form.categories : [form.primaryCategory],
           images: form.images ?? [],
@@ -146,14 +170,14 @@ export default function ListingEditorPage({ isNew }) {
           title: form.title.trim(),
           description: form.description.trim(),
           pricing: {
-            currency: form.pricing.currency || "AUD",
-            priceCents: Number(form.pricing.priceCents) || 0,
-            compareAtCents: Number(form.pricing.compareAtCents) || 0,
+            currency: form.currency || "AUD",
+            priceCents,
+            compareAtCents,
           },
           primaryCategory: form.primaryCategory,
           categories: form.categories?.length ? form.categories : [form.primaryCategory],
           images: form.images ?? [],
-          inventory: { stockQty: Number(form.inventory?.stockQty) || 0 },
+          inventory: { stockQty: Number(form.stockQty) || 0 },
         };
         const res = await ListingsAPI.update(id, payload);
         const saved = res?.data?.data ?? res?.data ?? null;
@@ -169,251 +193,266 @@ export default function ListingEditorPage({ isNew }) {
   const primaryImage =
     form.images?.find?.((i) => i?.isPrimary)?.url || form.images?.[0]?.url || "";
 
+  const inputClass = (invalid) =>
+    `w-full rounded-xl border px-4 py-2.5 text-gray-900 placeholder-gray-400 outline-none transition
+     focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500
+     ${invalid ? "border-red-300 bg-red-50/50" : "border-gray-300"}`;
+
   return (
-    <div className="mx-auto grid max-w-6xl grid-cols-1 gap-6 p-6 lg:grid-cols-3">
-      {/* LEFT: editor */}
-      <div className="lg:col-span-2 space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-extrabold">
-            {isNew ? "Create Product" : "Edit Product"}
+    <div className="mx-auto max-w-6xl px-4 py-6 lg:px-6">
+      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {isNew ? "Add new product" : "Edit product"}
           </h1>
-          <div className="text-sm text-gray-500">
-            <span className="text-rose-600">*</span> required
-          </div>
-        </div>
-
-        {error && (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-rose-700">
-            {error}
-          </div>
-        )}
-
-        {/* Basic */}
-        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium">
-                Title <span className="text-rose-600">*</span>
-              </label>
-              <input
-                className="w-full rounded-xl border px-3 py-2 outline-none focus:border-indigo-400"
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                placeholder="E.g. Hand-poured soy candle"
-              />
-            </div>
-
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium">
-                Description <span className="text-rose-600">*</span>
-              </label>
-              <textarea
-                rows={6}
-                className="w-full rounded-xl border px-3 py-2 outline-none focus:border-indigo-400"
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                placeholder="Describe materials, size, fragrance, care, etc."
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Pricing / Stock */}
-        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-          <h2 className="mb-4 text-lg font-bold">Pricing & Stock</h2>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <div className="md:col-span-2">
-              <label className="mb-1 block text-sm font-medium">
-                Price (cents) <span className="text-rose-600">*</span>
-              </label>
-              <input
-                type="number"
-                min="0"
-                className="w-full rounded-xl border px-3 py-2 outline-none focus:border-indigo-400"
-                value={form.pricing.priceCents}
-                onChange={(e) =>
-                  setForm({ ...form, pricing: { ...form.pricing, priceCents: e.target.value } })
-                }
-                placeholder="e.g. 2500"
-              />
-              <div className="mt-1 text-xs text-gray-500">
-                Preview: {money(form.pricing.priceCents, form.pricing.currency)}
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Compare-at (cents)</label>
-              <input
-                type="number" min="0"
-                className="w-full rounded-xl border px-3 py-2 outline-none focus:border-indigo-400"
-                value={form.pricing.compareAtCents}
-                onChange={(e) =>
-                  setForm({ ...form, pricing: { ...form.pricing, compareAtCents: e.target.value } })
-                }
-                placeholder="Optional"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Currency</label>
-              <input
-                disabled
-                className="w-full rounded-xl border bg-gray-50 px-3 py-2 text-gray-600"
-                value={form.pricing.currency}
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Stock qty</label>
-              <input
-                type="number" min="0"
-                className="w-full rounded-xl border px-3 py-2 outline-none focus:border-indigo-400"
-                value={form.inventory?.stockQty ?? 0}
-                onChange={(e) =>
-                  setForm({ ...form, inventory: { stockQty: Number(e.target.value) || 0 } })
-                }
-                placeholder="0"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Categories */}
-        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-bold">Categories</h2>
-            <div className="text-sm text-gray-500">
-              Choose a primary and up to two more (3 max).
-            </div>
-          </div>
-
-          <p className="mb-2 text-sm font-medium">
-            Primary category <span className="text-rose-600">*</span>
+          <p className="mt-1 text-sm text-gray-500">
+            {isNew ? "Fill in the details below to list your item." : "Update your listing and save."}
           </p>
-
-          {allowedCats.length ? (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-              {allowedCats.map((c) => {
-                const label = LABELS[c.slug] || c.name || c.path || "Category";
-                const active = isPrimary(c._id);
-                return (
-                  <button
-                    key={c._id}
-                    type="button"
-                    onClick={() => setPrimary(c._id)}
-                    className={`group relative overflow-hidden rounded-2xl border p-4 text-left transition
-                      ${active ? "border-indigo-500 ring-2 ring-indigo-200" : "border-gray-200 hover:border-gray-300"}`}
-                  >
-                    <div className={`h-2 w-full rounded ${active ? "bg-indigo-500" : "bg-gradient-to-r from-rose-300 via-amber-300 to-indigo-300"}`} />
-                    <div className="mt-3">
-                      <div className="truncate font-bold text-gray-900">{label}</div>
-                      <div className="truncate text-xs text-gray-500">{c.slug}</div>
-                    </div>
-                    {active && (
-                      <span className="absolute right-2 top-2 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-semibold text-white">
-                        Primary
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-              No categories found. Seed the 10 categories and refresh.
-            </div>
-          )}
-
-          {!!allowedCats.length && (
-            <>
-              <p className="mt-5 mb-2 text-sm font-medium">Additional categories</p>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {allowedCats.map((c) => {
-                  const idStr = String(c._id);
-                  const label = LABELS[c.slug] || c.name || c.path || "Category";
-                  const checked = selectedIds.includes(idStr);
-                  const disabled = isPrimary(idStr);
-                  return (
-                    <label
-                      key={c._id}
-                      className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm
-                        ${disabled ? "bg-gray-50 border-gray-200 text-gray-400"
-                                   : checked ? "border-indigo-500 bg-indigo-50"
-                                             : "border-gray-200"}`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        disabled={disabled}
-                        checked={checked || disabled}
-                        onChange={() => toggleAdditional(c._id)}
-                      />
-                      <span className="truncate">{label}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              <div className="mt-2 text-xs text-gray-500">
-                Up to 3 categories total (including primary).
-              </div>
-            </>
-          )}
         </div>
-
-        {/* Images */}
-        <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-black/5">
-          <h2 className="mb-4 text-lg font-bold">Images</h2>
-          <ImageUploader
-            value={form.images}
-            onChange={(next) => setForm((prev) => ({ ...prev, images: next }))}
-          />
-          <div className="mt-2 text-xs text-gray-500">
-            Tip: set one image as <b>Primary</b> to publish.
-          </div>
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-3">
+        <div className="flex gap-2">
           <button
+            type="button"
+            onClick={() => nav("/vendor/listings")}
+            className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
             disabled={saving || !canSave}
             onClick={save}
-            className={`rounded-xl px-4 py-2 text-white ${canSave ? "bg-indigo-600 hover:bg-indigo-500" : "bg-gray-400 cursor-not-allowed"}`}
+            className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-60"
           >
-            {saving ? "Saving…" : "Save & Preview"}
-          </button>
-          <button onClick={() => nav("/vendor/listings")} className="rounded-xl border px-4 py-2">
-            Cancel
+            {saving ? "Saving…" : "Save & preview"}
           </button>
         </div>
       </div>
 
-      {/* RIGHT: live preview */}
-      <aside className="lg:col-span-1">
-        <div className="lg:sticky lg:top-6 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-          <h3 className="mb-3 font-semibold">Preview</h3>
-          <div className="overflow-hidden rounded-xl border">
-            {primaryImage ? (
-              <img src={primaryImage} alt="" className="h-56 w-full object-cover" />
+      {error && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          <FormSection
+            step={1}
+            title="Product details"
+            description="Name and description customers will see."
+          >
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Product title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  className={inputClass(!!validation.title)}
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  onBlur={() => setTouched((t) => ({ ...t, title: true }))}
+                  placeholder="e.g. Hand-poured soy candle, Lavender & Eucalyptus"
+                  maxLength={120}
+                />
+                {validation.title && <p className="mt-1 text-xs text-red-600">{validation.title}</p>}
+                <p className="mt-1 text-xs text-gray-500">Clear, descriptive titles perform better.</p>
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Description <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  rows={5}
+                  className={inputClass(!!validation.description)}
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  onBlur={() => setTouched((t) => ({ ...t, description: true }))}
+                  placeholder="Materials, dimensions, care instructions, and what makes it special."
+                />
+                {validation.description && <p className="mt-1 text-xs text-red-600">{validation.description}</p>}
+              </div>
+            </div>
+          </FormSection>
+
+          <FormSection
+            step={2}
+            title="Media"
+            description="Photos help buyers trust your product. Set one as primary."
+          >
+            <ImageUploader
+              value={form.images}
+              onChange={(next) => setForm((prev) => ({ ...prev, images: next }))}
+            />
+            <p className="mt-3 text-xs text-gray-500">Primary image is shown in search and on the product page.</p>
+          </FormSection>
+
+          <FormSection
+            step={3}
+            title="Pricing & inventory"
+            description="Set price in AUD. Optional compare-at price shows a discount."
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">
+                  Price (AUD) <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className={inputClass(!!validation.price)}
+                  value={form.priceDollars}
+                  onChange={(e) => setForm({ ...form, priceDollars: e.target.value })}
+                  onBlur={() => setTouched((t) => ({ ...t, price: true }))}
+                  placeholder="25.00"
+                />
+                {validation.price && <p className="mt-1 text-xs text-red-600">{validation.price}</p>}
+                {form.priceDollars && !validation.price && (
+                  <p className="mt-1 text-xs text-gray-500">Display: {money(priceCents, "AUD")}</p>
+                )}
+              </div>
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">Compare-at price (AUD)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className={inputClass(false)}
+                  value={form.compareAtDollars}
+                  onChange={(e) => setForm({ ...form, compareAtDollars: e.target.value })}
+                  placeholder="30.00"
+                />
+                <p className="mt-1 text-xs text-gray-500">Optional. Shows as “was $X” when higher than price.</p>
+              </div>
+              <div className="sm:col-span-2">
+                <label className="mb-1.5 block text-sm font-medium text-gray-700">Stock quantity</label>
+                <input
+                  type="number"
+                  min="0"
+                  className={inputClass(false)}
+                  value={form.stockQty}
+                  onChange={(e) => setForm({ ...form, stockQty: e.target.value })}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+          </FormSection>
+
+          <FormSection
+            step={4}
+            title="Categories"
+            description="Choose a primary category and up to 2 more (3 total)."
+          >
+            <p className="mb-3 text-sm font-medium text-gray-700">Primary category <span className="text-red-500">*</span></p>
+            {allowedCats.length ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
+                {allowedCats.map((c) => {
+                  const label = LABELS[c.slug] || c.name || c.path || "Category";
+                  const active = isPrimary(c._id);
+                  return (
+                    <button
+                      key={c._id}
+                      type="button"
+                      onClick={() => setPrimary(c._id)}
+                      className={`relative rounded-xl border p-3 text-left transition
+                        ${active ? "border-indigo-500 bg-indigo-50 ring-2 ring-indigo-200" : "border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50"}`}
+                    >
+                      <div className={`mb-2 h-1 w-full rounded ${active ? "bg-indigo-500" : "bg-gray-200"}`} />
+                      <div className="truncate text-sm font-medium text-gray-900">{label}</div>
+                      {active && (
+                        <span className="absolute right-2 top-2 rounded bg-indigo-600 px-1.5 py-0.5 text-[10px] font-medium text-white">
+                          Primary
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             ) : (
-              <div className="flex h-56 w-full items-center justify-center bg-gray-50 text-sm text-gray-400">
-                No image yet
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                No categories available. Refresh the page or contact support.
               </div>
             )}
-            <div className="space-y-1 p-4">
-              <div className="text-xs text-gray-500">Status</div>
-              <div className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
-                Draft
-              </div>
-              <div className="mt-2 truncate text-base font-semibold">{form.title || "Untitled product"}</div>
-              <div className="text-sm text-gray-600">
-                {money(form.pricing.priceCents, form.pricing.currency)}
+
+            {!!allowedCats.length && (
+              <>
+                <p className="mt-5 mb-2 text-sm font-medium text-gray-700">Additional categories</p>
+                <div className="flex flex-wrap gap-2">
+                  {allowedCats.map((c) => {
+                    const idStr = String(c._id);
+                    const label = LABELS[c.slug] || c.name || c.path || "Category";
+                    const checked = selectedIds.includes(idStr);
+                    const disabled = isPrimary(idStr);
+                    return (
+                      <label
+                        key={c._id}
+                        className={`inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm
+                          ${disabled ? "cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400" : ""}
+                          ${!disabled && checked ? "border-indigo-500 bg-indigo-50 text-indigo-800" : ""}
+                          ${!disabled && !checked ? "border-gray-200 hover:border-gray-300" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-gray-300 text-indigo-600"
+                          disabled={disabled}
+                          checked={checked || disabled}
+                          onChange={() => toggleAdditional(c._id)}
+                        />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </FormSection>
+
+          <div className="flex flex-wrap gap-3 border-t border-gray-200 pt-6">
+            <button
+              type="button"
+              disabled={saving || !canSave}
+              onClick={save}
+              className="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:pointer-events-none disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save & preview"}
+            </button>
+            <button
+              type="button"
+              onClick={() => nav("/vendor/listings")}
+              className="rounded-xl border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        <aside className="lg:col-span-1">
+          <div className="sticky top-24 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+            <h3 className="mb-3 text-sm font-semibold text-gray-900">Live preview</h3>
+            <div className="overflow-hidden rounded-xl border border-gray-200">
+              {primaryImage ? (
+                <img src={primaryImage} alt="" className="h-48 w-full object-cover" />
+              ) : (
+                <div className="flex h-48 w-full items-center justify-center bg-gray-100 text-sm text-gray-400">
+                  No image
+                </div>
+              )}
+              <div className="space-y-1 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">Status</span>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                    Draft
+                  </span>
+                </div>
+                <div className="truncate font-medium text-gray-900">{form.title || "Untitled product"}</div>
+                <div className="text-sm font-semibold text-indigo-600">
+                  {form.priceDollars ? money(priceCents, form.currency) : "—"}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </aside>
+        </aside>
+      </div>
     </div>
   );
 }
-
-

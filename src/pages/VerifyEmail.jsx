@@ -191,19 +191,26 @@ export default function VerifyEmail() {
     }
     try {
       setSubmitting(true);
-      const res = await AuthAPI.verifyEmail({ email, code });
+      // Normalize code: uppercase, no spaces (backend expects same)
+      const codeToSend = String(code).replace(/\s+/g, "").toUpperCase();
+      const res = await AuthAPI.verifyEmail({ email, code: codeToSend });
+      if (!res?.ok) {
+        const err = new Error(res?.data?.message || "Verification failed");
+        err.code = res?.data?.code;
+        err.body = res?.data;
+        throw err;
+      }
       const user = res?.user || res?.data?.user;
       if (auth) {
         if (typeof auth.signIn === "function") auth.signIn(user);
         else if (typeof auth.setUser === "function") auth.setUser(user);
       }
-      // Backend should send the “Registration successful / Welcome” email here.
       const dest = redirectByRole(user);
       navigate(dest, { replace: true });
     } catch (e) {
-      const code = e?.code || e?.body?.code;
-      setError(humanError(code));
-      if (code === CODES.CODE_EXPIRED) setExpiredBanner(true);
+      const errCode = e?.code || e?.body?.code;
+      setError(humanError(errCode));
+      if (errCode === CODES.CODE_EXPIRED) setExpiredBanner(true);
     } finally {
       setSubmitting(false);
     }
@@ -245,13 +252,13 @@ export default function VerifyEmail() {
       <div className="relative z-10 w-full max-w-lg bg-white/90 backdrop-blur rounded-2xl shadow-xl p-8">
         <h1 className="text-2xl font-extrabold text-center mb-2">Verify your email</h1>
         <p className="text-center text-sm text-gray-600">
-          We’ve sent a 6-character code to <b>{email || "your email"}</b>. Enter it below (A–Z, 0–9).
+          We’ve sent a 6-character code to <b>{email || "your email"}</b>. Enter it below (only letters A–Z and digits 2–9; you can paste the whole code).
         </p>
 
         {/* Registration unsuccessful banner for expired code */}
         {expiredBanner && (
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            <b>Registration unsuccessful:</b> your code expired (10-minute limit). You can resend a new code
+            <b>Registration unsuccessful:</b> your code expired (5-minute limit). You can resend a new code
             or register again.
           </div>
         )}
@@ -296,6 +303,9 @@ export default function VerifyEmail() {
         {error && (
           <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
+            {error.includes("doesn't match") && (
+              <p className="mt-2 text-xs text-red-600">Try letter <strong>O</strong> instead of digit <strong>0</strong>, or <strong>I</strong> instead of <strong>1</strong>, if your email code is unclear.</p>
+            )}
           </div>
         )}
 

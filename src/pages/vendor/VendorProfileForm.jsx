@@ -1,4 +1,4 @@
-// src/components/vendor/VendorProfileForm.jsx
+// src/pages/vendor/VendorProfileForm.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { VendorAPI } from "../../lib/api";
 import { X } from "lucide-react";
@@ -6,29 +6,33 @@ import { X } from "lucide-react";
 const EMAIL_RX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_LOGO_BYTES = 2 * 1024 * 1024; // 2 MB
 
+const defaultAddress = () => ({ line1: "", line2: "", city: "", state: "", postcode: "", country: "AU" });
+
 export default function VendorProfileForm({ value, onSubmit, onCancel }) {
-  /* --------------------------- state & helpers --------------------------- */
-  const [form, setForm] = useState(() => ({
-    businessName: "",
-    ownerName: "",
-    contactEmail: "",
-    phone: "",
-    about: "",
-    website: "",
-    socials: { instagram: "", facebook: "", tiktok: "" },
-    address: { line1: "", line2: "", suburb: "", state: "", postCode: "", country: "AU" },
-    taxNumber: "",
-    policies: { shipping: "", returns: "" },
-    bank: { bsb: "", accountName: "", accountNumber: "" },
-    logoUrl: "",
-    ...(value || {}),
-  }));
+  const [form, setForm] = useState(() => {
+    const val = value || {};
+    const { address: _addr, ...rest } = val;
+    return {
+      businessName: "",
+      ownerName: "",
+      contactEmail: "",
+      phone: "",
+      bio: "",
+      website: "",
+      socials: { instagram: "", facebook: "", tiktok: "" },
+      address: { ...defaultAddress(), ...(val.address || {}) },
+      taxNumber: "",
+      policies: { shipping: "", returns: "" },
+      bank: { bsb: "", accountName: "", accountNumber: "" },
+      logoUrl: "",
+      brandColor: "",
+      ...rest,
+    };
+  });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const [logoErr, setLogoErr] = useState("");
-
-  const bodyRef = useRef(null);
   const dropRef = useRef(null);
 
   const setField = (path, val) =>
@@ -49,8 +53,7 @@ export default function VendorProfileForm({ value, onSubmit, onCancel }) {
       !!form.businessName,
       !!form.contactEmail,
       !!form.logoUrl,
-      !!form.address?.suburb,
-      !!form.address?.state,
+      !!form.address?.city,
       !!form.taxNumber,
     ];
     return Math.round((checks.filter(Boolean).length / checks.length) * 100);
@@ -81,15 +84,13 @@ export default function VendorProfileForm({ value, onSubmit, onCancel }) {
     if (!file) return;
     if (!/image\/(jpeg|png)/.test(file.type)) return setLogoErr("Only JPEG/PNG allowed.");
     if (file.size > MAX_LOGO_BYTES) return setLogoErr("Max 2 MB.");
-
     try {
       setLogoUploading(true);
       const r = await VendorAPI.uploadLogo(file);
-      const url =
-        r?.data?.data?.url ||
-        r?.data?.data?.logoUrl ||
-        r?.data?.url ||
-        r?.url;
+      if (r?.ok === false) {
+        throw new Error(r?.data?.message || "Upload failed");
+      }
+      const url = r?.data?.data?.url ?? r?.data?.data?.logoUrl ?? r?.data?.url ?? r?.url;
       if (!url) throw new Error("Upload failed");
       setField("logoUrl", url);
     } catch (err) {
@@ -99,7 +100,6 @@ export default function VendorProfileForm({ value, onSubmit, onCancel }) {
     }
   }
 
-  // Drag & drop on the logo card
   useEffect(() => {
     const el = dropRef.current;
     if (!el) return;
@@ -109,15 +109,15 @@ export default function VendorProfileForm({ value, onSubmit, onCancel }) {
     };
     const onOver = (e) => {
       stop(e);
-      el.classList.add("ring-2", "ring-indigo-300");
+      el.classList.add("ring-2", "ring-indigo-400");
     };
     const onLeave = (e) => {
       stop(e);
-      el.classList.remove("ring-2", "ring-indigo-300");
+      el.classList.remove("ring-2", "ring-indigo-400");
     };
     const onDrop = (e) => {
       stop(e);
-      el.classList.remove("ring-2", "ring-indigo-300");
+      el.classList.remove("ring-2", "ring-indigo-400");
       const f = e.dataTransfer.files?.[0];
       if (f) onPickLogo(f);
     };
@@ -131,262 +131,204 @@ export default function VendorProfileForm({ value, onSubmit, onCancel }) {
     };
   }, []);
 
-  /* ------------------------------- layout ------------------------------- */
   return (
-    <div
-      className="
-        w-[min(1000px,95vw)]
-        max-h-[86vh]
-        overflow-hidden
-        rounded-3xl
-        bg-white
-        shadow-2xl
-      "
-    >
-      {/* Hero header */}
-      <div className="relative isolate">
-        <div className="pointer-events-none absolute inset-0 -z-10 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 opacity-90" />
-        <div className="px-6 pt-5 pb-4 text-white">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-xs/5 opacity-90">Business Profile</div>
-              <h3 className="text-2xl font-bold tracking-tight">
-                {form.businessName || "Edit Business Profile"}
-              </h3>
-              <p className="mt-1 text-sm opacity-90">
-                Make your shopfront trustworthy and recognisable.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onCancel}
-              className="rounded-full bg-white/15 p-2 hover:bg-white/25"
-              aria-label="Close"
-            >
-              <X className="h-5 w-5" />
-            </button>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl bg-white">
+      {/* Header */}
+      <div className="shrink-0 border-b border-gray-200 bg-gray-50 px-5 py-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Edit business profile</h2>
+            <p className="mt-0.5 text-sm text-gray-500">Update your shop details and visibility.</p>
           </div>
-
-          {/* progress */}
-          <div className="mt-3 h-2 w-56 overflow-hidden rounded-full bg-white/30">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-lg p-2 text-gray-500 hover:bg-gray-200 hover:text-gray-900"
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="mt-3 flex items-center gap-3">
+          <div className="h-2 flex-1 overflow-hidden rounded-full bg-gray-200">
             <div
-              className="h-2 bg-white"
+              className="h-full rounded-full bg-indigo-600 transition-all"
               style={{ width: `${completeness}%` }}
             />
           </div>
+          <span className="text-xs font-medium text-gray-500">{completeness}% complete</span>
         </div>
       </div>
 
-      {/* Body (scroll) */}
-      <form onSubmit={submit} ref={bodyRef} className="grid grid-cols-1 gap-6 overflow-y-auto px-6 py-6 md:grid-cols-12">
-        {/* Left column */}
-        <div className="md:col-span-5 space-y-6">
-          {/* Logo card */}
-          <Card>
-            <div ref={dropRef} className="flex items-center gap-4 rounded-xl border border-dashed border-gray-300 bg-gray-50/60 p-4">
-              <div className="grid h-20 w-20 place-items-center overflow-hidden rounded-xl bg-white ring-1 ring-gray-200">
-                {form.logoUrl ? (
-                  <img src={form.logoUrl} alt="logo" className="h-full w-full object-cover" />
-                ) : (
-                  <span className="text-xs text-gray-400">No logo</span>
-                )}
-              </div>
-              <div className="flex-1">
-                <div className="text-sm font-medium">Business logo</div>
-                <p className="text-xs text-gray-500">Drag & drop or choose a file (JPEG/PNG, ≤2 MB)</p>
-                <div className="mt-2 flex items-center gap-3">
-                  <label className="inline-flex cursor-pointer items-center rounded-lg border bg-white px-3 py-1.5 text-sm hover:bg-gray-50">
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg"
-                      className="hidden"
-                      onChange={(e) => onPickLogo(e.target.files?.[0])}
-                      disabled={logoUploading}
-                    />
-                    Choose file
-                  </label>
-                  {logoUploading && <span className="text-xs text-gray-600">Uploading…</span>}
-                  {logoErr && <span className="text-xs text-rose-600">{logoErr}</span>}
+      {/* Scrollable body */}
+      <form
+        onSubmit={submit}
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          <div className="mx-auto grid max-w-4xl grid-cols-1 gap-6 md:grid-cols-12">
+            {/* Left column */}
+            <div className="md:col-span-5 space-y-5">
+              <Card title="Logo">
+                <div
+                  ref={dropRef}
+                  className="flex items-center gap-4 rounded-xl border-2 border-dashed border-gray-200 bg-gray-50/50 p-4 transition"
+                >
+                  <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-white ring-1 ring-gray-200">
+                    {form.logoUrl ? (
+                      <img src={form.logoUrl} alt="Logo" className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-xs text-gray-400">No logo</div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-gray-900">Business logo</p>
+                    <p className="mt-0.5 text-xs text-gray-500">JPEG or PNG, max 2 MB</p>
+                    <label className="mt-2 inline-block">
+                      <span className="inline-flex cursor-pointer items-center rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                        Choose file
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg"
+                        className="hidden"
+                        onChange={(e) => onPickLogo(e.target.files?.[0])}
+                        disabled={logoUploading}
+                      />
+                    </label>
+                    {logoUploading && <span className="ml-2 text-xs text-gray-500">Uploading…</span>}
+                    {logoErr && <p className="mt-1 text-xs text-red-600">{logoErr}</p>}
+                  </div>
                 </div>
-              </div>
-            </div>
-          </Card>
+              </Card>
 
-          {/* Contact */}
-          <Card title="Contact">
-            <Input
-              label="Contact email *"
-              value={form.contactEmail}
-              onChange={(v) => setField("contactEmail", v)}
-              error={errors.contactEmail}
-            />
-            <Input
-              label="Phone"
-              value={form.phone || ""}
-              onChange={(v) => setField("phone", v)}
-            />
-            <Input
-              label="Website"
-              placeholder="https://"
-              value={form.website || ""}
-              onChange={(v) => setField("website", v)}
-            />
-          </Card>
+              <Card title="Contact">
+                <Input
+                  label="Contact email *"
+                  type="email"
+                  value={form.contactEmail}
+                  onChange={(v) => setField("contactEmail", v)}
+                  error={errors.contactEmail}
+                />
+                <Input label="Phone" value={form.phone || ""} onChange={(v) => setField("phone", v)} />
+                <Input label="Website" placeholder="https://" value={form.website || ""} onChange={(v) => setField("website", v)} />
+              </Card>
 
-          {/* Socials */}
-          <Card title="Socials">
-            <div className="grid grid-cols-3 gap-3">
-              <Input
-                label="Instagram"
-                value={form.socials?.instagram || ""}
-                onChange={(v) => setField("socials.instagram", v)}
-              />
-              <Input
-                label="Facebook"
-                value={form.socials?.facebook || ""}
-                onChange={(v) => setField("socials.facebook", v)}
-              />
-              <Input
-                label="TikTok"
-                value={form.socials?.tiktok || ""}
-                onChange={(v) => setField("socials.tiktok", v)}
-              />
+              <Card title="Social links">
+                <Input label="Instagram" placeholder="@handle" value={form.socials?.instagram || ""} onChange={(v) => setField("socials.instagram", v)} />
+                <Input label="Facebook" value={form.socials?.facebook || ""} onChange={(v) => setField("socials.facebook", v)} />
+                <Input label="TikTok" value={form.socials?.tiktok || ""} onChange={(v) => setField("socials.tiktok", v)} />
+              </Card>
             </div>
-          </Card>
+
+            {/* Right column */}
+            <div className="md:col-span-7 space-y-5">
+              <Card title="Basics">
+                <Input
+                  label="Business name *"
+                  value={form.businessName}
+                  onChange={(v) => setField("businessName", v)}
+                  error={errors.businessName}
+                />
+                <Input label="Owner / display name" value={form.ownerName || ""} onChange={(v) => setField("ownerName", v)} />
+                <Textarea
+                  label="About your business"
+                  rows={4}
+                  value={form.bio || ""}
+                  onChange={(v) => setField("bio", v)}
+                  placeholder="Short description for your storefront."
+                />
+              </Card>
+
+              <Card title="Address">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <Input className="sm:col-span-2" placeholder="Address line 1" value={form.address?.line1 || ""} onChange={(v) => setField("address.line1", v)} />
+                  <Input className="sm:col-span-2" placeholder="Address line 2" value={form.address?.line2 || ""} onChange={(v) => setField("address.line2", v)} />
+                  <Input placeholder="City / suburb" value={form.address?.city || ""} onChange={(v) => setField("address.city", v)} />
+                  <Input placeholder="State" value={form.address?.state || ""} onChange={(v) => setField("address.state", v)} />
+                  <Input placeholder="Postcode" value={form.address?.postcode || ""} onChange={(v) => setField("address.postcode", v)} />
+                  <Input placeholder="Country" value={form.address?.country || "AU"} onChange={(v) => setField("address.country", v)} />
+                </div>
+              </Card>
+
+              <Card title="Policies & tax">
+                <Input label="ABN / Tax number" value={form.taxNumber || ""} onChange={(v) => setField("taxNumber", v)} />
+                <Textarea label="Shipping policy" rows={3} value={form.policies?.shipping || ""} onChange={(v) => setField("policies.shipping", v)} />
+                <Textarea label="Returns policy" rows={3} value={form.policies?.returns || ""} onChange={(v) => setField("policies.returns", v)} />
+              </Card>
+
+              <Card title="Bank details (private)">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <Input label="BSB" value={form.bank?.bsb || ""} onChange={(v) => setField("bank.bsb", v)} />
+                  <Input label="Account name" value={form.bank?.accountName || ""} onChange={(v) => setField("bank.accountName", v)} />
+                  <Input label="Account number" value={form.bank?.accountNumber || ""} onChange={(v) => setField("bank.accountNumber", v)} />
+                </div>
+              </Card>
+            </div>
+          </div>
         </div>
 
-        {/* Right column */}
-        <div className="md:col-span-7 space-y-6">
-          {/* Basics */}
-          <Card title="Basics">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Input
-                label="Business name *"
-                value={form.businessName}
-                onChange={(v) => setField("businessName", v)}
-                error={errors.businessName}
-              />
-              <Input
-                label="Owner name"
-                value={form.ownerName || ""}
-                onChange={(v) => setField("ownerName", v)}
-              />
-              <Textarea
-                className="md:col-span-2"
-                label="About"
-                rows={4}
-                value={form.about || ""}
-                onChange={(v) => setField("about", v)}
-              />
-            </div>
-          </Card>
-
-          {/* Address */}
-          <Card title="Address">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <Input placeholder="Line 1" value={form.address?.line1 || ""} onChange={(v) => setField("address.line1", v)} />
-              <Input placeholder="Line 2" value={form.address?.line2 || ""} onChange={(v) => setField("address.line2", v)} />
-              <Input placeholder="Suburb / City" value={form.address?.suburb || ""} onChange={(v) => setField("address.suburb", v)} />
-              <Input placeholder="State" value={form.address?.state || ""} onChange={(v) => setField("address.state", v)} />
-              <Input placeholder="Post Code" value={form.address?.postCode || ""} onChange={(v) => setField("address.postCode", v)} />
-              <Input placeholder="Country" value={form.address?.country || "AU"} onChange={(v) => setField("address.country", v)} />
-            </div>
-          </Card>
-
-          {/* Policies & Tax */}
-          <Card title="Policies & Tax">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Input label="ABN / Tax number" value={form.taxNumber || ""} onChange={(v) => setField("taxNumber", v)} />
-              <div />
-              <Textarea
-                label="Shipping policy"
-                rows={4}
-                value={form.policies?.shipping || ""}
-                onChange={(v) => setField("policies.shipping", v)}
-              />
-              <Textarea
-                label="Returns policy"
-                rows={4}
-                value={form.policies?.returns || ""}
-                onChange={(v) => setField("policies.returns", v)}
-              />
-            </div>
-          </Card>
-
-          {/* Bank */}
-          <Card title="Bank details (private)">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <Input label="BSB" value={form.bank?.bsb || ""} onChange={(v) => setField("bank.bsb", v)} />
-              <Input label="Account name" value={form.bank?.accountName || ""} onChange={(v) => setField("bank.accountName", v)} />
-              <Input label="Account number" value={form.bank?.accountNumber || ""} onChange={(v) => setField("bank.accountNumber", v)} />
-            </div>
-          </Card>
+        {/* Sticky footer */}
+        <div className="shrink-0 border-t border-gray-200 bg-white px-5 py-4">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+            >
+              {saving ? "Saving…" : "Save profile"}
+            </button>
+          </div>
         </div>
-
-        {/* spacer to avoid body covering sticky footer on iOS */}
-        <div className="md:col-span-12 h-2" />
       </form>
-
-      {/* Sticky actions */}
-      <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t bg-white/95 px-6 py-4 backdrop-blur">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm hover:bg-gray-50"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          onClick={submit}
-          disabled={saving}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-60"
-        >
-          {saving ? "Saving…" : "Save profile"}
-        </button>
-      </div>
     </div>
   );
 }
 
-/* ------------------------------- UI bits ------------------------------- */
-
 function Card({ title, children }) {
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-      {title && <div className="mb-3 text-sm font-semibold text-gray-900">{title}</div>}
-      {children}
+    <section className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      {title && <h3 className="mb-3 text-sm font-semibold text-gray-900">{title}</h3>}
+      <div className="space-y-3">{children}</div>
     </section>
   );
 }
 
-function Input({ label, value, onChange, placeholder, error, className = "" }) {
+function Input({ label, value, onChange, placeholder, error, type = "text", className = "" }) {
   return (
     <label className={`block ${className}`}>
-      {label && <div className="mb-1 text-sm font-medium text-gray-800">{label}</div>}
+      {label && <span className="mb-1 block text-sm font-medium text-gray-700">{label}</span>}
       <input
+        type={type}
         value={value}
         onChange={(e) => onChange?.(e.target.value)}
         placeholder={placeholder}
-        className={`w-full rounded-xl border px-3 py-2 outline-none transition
-        ${error ? "border-rose-300 ring-2 ring-rose-100" : "border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"}`}
+        className={`w-full rounded-lg border px-3 py-2 text-gray-900 outline-none transition placeholder:text-gray-400
+          ${error ? "border-red-300 ring-2 ring-red-100" : "border-gray-300 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"}`}
       />
-      {error && <div className="mt-1 text-xs text-rose-600">{error}</div>}
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </label>
   );
 }
 
-function Textarea({ label, value, onChange, rows = 3, className = "" }) {
+function Textarea({ label, value, onChange, rows = 3, placeholder, className = "" }) {
   return (
     <label className={`block ${className}`}>
-      {label && <div className="mb-1 text-sm font-medium text-gray-800">{label}</div>}
+      {label && <span className="mb-1 block text-sm font-medium text-gray-700">{label}</span>}
       <textarea
         rows={rows}
         value={value}
         onChange={(e) => onChange?.(e.target.value)}
-        className="w-full rounded-xl border border-gray-300 px-3 py-2 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
       />
     </label>
   );
 }
-
