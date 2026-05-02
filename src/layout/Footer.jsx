@@ -7,9 +7,12 @@ export default function Footer() {
         {/* Brand */}
         <div>
           <img
-            src="/images/footer-logo.png"
+            src="/images/footer-logo.webp"
             alt="Artisan Avenue"
-             className="h-20 w-auto mx-auto" 
+            width="160"
+            height="160"
+            loading="lazy"
+            className="h-20 w-auto mx-auto" 
           />
           <p className="text-sm leading-6">
             Curated marketplace for Australian vendors. Thoughtfully made,
@@ -58,13 +61,13 @@ export default function Footer() {
           {/* Social Icons */}
           <div className="flex gap-4 mt-4">
             <a href="https://instagram.com" target="_blank" aria-label="Instagram">
-              <img src="/images/instagram.png" alt="Instagram" className="w-8 h-8 hover:opacity-80 rounded-lg" />
+              <img src="/images/instagram.webp" alt="Instagram" width="32" height="32" loading="lazy" className="w-8 h-8 hover:opacity-80 rounded-lg" />
             </a>
             <a href="https://facebook.com" target="_blank" aria-label="Facebook">
-              <img src="/images/facebook.png" alt="Facebook" className="w-8 h-8 hover:opacity-80 rounded-lg"  />
+              <img src="/images/facebook.webp" alt="Facebook" width="32" height="32" loading="lazy" className="w-8 h-8 hover:opacity-80 rounded-lg"  />
             </a>
             <a href="https://pinterest.com" target="_blank" aria-label="Pinterest">
-              <img src="/images/pinterest.png" alt="Pinterest" className="w-8 h-8 hover:opacity-80 rounded-lg"  />
+              <img src="/images/pinterest.webp" alt="Pinterest" width="32" height="32" loading="lazy" className="w-8 h-8 hover:opacity-80 rounded-lg"  />
             </a>
           </div>
         </div>

@@ -4,3 +4,20 @@
 
 .container { @apply max-w-7xl mx-auto px-4; }
 .section { @apply py-16; }
+
+/* After Tailwind utilities: admin native <select> needs stronger contrast (Windows light dropdown + inherited text) */
+.admin-app {
+  color-scheme: dark;
+}
+
+.admin-app select {
+  color-scheme: dark;
+  background-color: rgb(15 23 42 / 0.75);
+  color: rgb(241 245 249);
+}
+
+.admin-app select option,
+.admin-app select optgroup {
+  background-color: rgb(15 23 42);
+  color: rgb(241 245 249);
+}

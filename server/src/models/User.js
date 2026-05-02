@@ -22,6 +22,19 @@ const LegacyVendorSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const CustomerAddressSchema = new mongoose.Schema(
+  {
+    line1: { type: String, trim: true, default: "" },
+    line2: { type: String, trim: true, default: "" },
+    city: { type: String, trim: true, default: "" },
+    state: { type: String, trim: true, default: "" },
+    postcode: { type: String, trim: true, default: "" },
+    country: { type: String, trim: true, default: "AU" },
+    phone: { type: String, trim: true, default: "" },
+  },
+  { _id: false }
+);
+
 // Migrate legacy single category -> array automatically
 LegacyVendorSchema.pre("save", function (next) {
   if ((!this.primaryCategories || this.primaryCategories.length === 0) && this.primaryCategory) {
@@ -35,7 +48,7 @@ const UserSchema = new mongoose.Schema(
   {
     role: {
       type: String,
-      enum: ["customer", "vendor"],
+      enum: ["customer", "vendor", "admin"],
       required: true,
       index: true,
     },
@@ -61,9 +74,12 @@ const UserSchema = new mongoose.Schema(
     },
 
     passwordHash: { type: String, required: true },
+    isActive: { type: Boolean, default: true, index: true },
+    deactivatedAt: { type: Date, default: null },
 
     /* Customer fields (keep simple) */
     address: { type: String, trim: true },
+    shippingAddress: { type: CustomerAddressSchema, default: () => ({}) },
     dob: Date,
 
     /**
@@ -71,6 +87,12 @@ const UserSchema = new mongoose.Schema(
      * We keep it with select:false so it won't be returned unless explicitly asked.
      */
     vendor: { type: LegacyVendorSchema, select: false },
+    adminProfile: {
+      displayName: { type: String, trim: true, default: "" },
+      phone: { type: String, trim: true, default: "" },
+      department: { type: String, trim: true, default: "" },
+      bio: { type: String, trim: true, default: "" },
+    },
 
     // ====== Password reset fields ======
     resetCodeHash:      { type: String, select: false },
@@ -116,8 +138,8 @@ UserSchema.virtual("isVendor").get(function () {
 
 /** Minimal safe payload for storing in session / cookies, etc. */
 UserSchema.methods.safe = function () {
-  const { _id, role, firstName, lastName, email, username, isVerified } = this;
-  return { id: _id, role, firstName, lastName, email, username, isVerified };
+  const { _id, role, firstName, lastName, email, username, isVerified, address, shippingAddress, adminProfile } = this;
+  return { id: _id, role, firstName, lastName, email, username, isVerified, address, shippingAddress, adminProfile };
 };
 
 export default mongoose.model("User", UserSchema);

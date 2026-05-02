@@ -13,7 +13,7 @@ import {
   FaCheckCircle,
 } from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext";
-import { apiGet, ListingsAPI, VendorAPI } from "../../lib/api";
+import { apiGet, ListingsAPI, VendorAPI, VendorOrdersAPI } from "../../lib/api";
 
 const money = (cents, cur = "AUD") =>
   new Intl.NumberFormat(undefined, { style: "currency", currency: cur }).format((Number(cents) || 0) / 100);
@@ -129,9 +129,17 @@ export default function VendorDashboardBackoffice() {
     totalOrders: 0,
     totalUnits: 0,
     revenueCents: 0,
-    statusBreakdown: { processing: 0, shipped: 0, delivered: 0, cancelled: 0 },
+    completedOrders: 0,
+    completedRevenueCents: 0,
+    statusBreakdown: { new: 0, accepted: 0, in_progress: 0, completed: 0, rejected: 0, cancelled: 0 },
   });
   const [salesTrend, setSalesTrend] = useState([]);
+  const [monthlySales, setMonthlySales] = useState([]);
+  const [insight, setInsight] = useState({
+    estimatedProfitCents: 0,
+    totalRevenueCents: 0,
+    bestSellers: [],
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -140,7 +148,7 @@ export default function VendorDashboardBackoffice() {
     const run = async () => {
       setLoading(true);
       try {
-        const [draftRes, activeRes, outRes, unavailRes, archivedRes, allRes, profRes, ordersRes] =
+        const [draftRes, activeRes, outRes, unavailRes, archivedRes, allRes, profRes, ordersRes, analyticsRes] =
           await Promise.allSettled([
             ListingsAPI.list("", "draft", 1),
             ListingsAPI.list("", "active", 1),
@@ -150,6 +158,7 @@ export default function VendorDashboardBackoffice() {
             ListingsAPI.list("", "", 1),
             VendorAPI.getProfile(),
             apiGet("/api/vendor/orders?limit=200"),
+            VendorOrdersAPI.analytics(),
           ]);
 
         if (cancelled) return;
@@ -168,6 +177,17 @@ export default function VendorDashboardBackoffice() {
           ordersRes.status === "fulfilled"
             ? ordersRes.value?.data ?? {}
             : {};
+
+        const analyticsPayload =
+          analyticsRes.status === "fulfilled"
+            ? analyticsRes.value?.data?.data ?? analyticsRes.value?.data ?? {}
+            : {};
+        setMonthlySales(Array.isArray(analyticsPayload.monthlySales) ? analyticsPayload.monthlySales : []);
+        setInsight({
+          estimatedProfitCents: Number(analyticsPayload.estimatedProfitCents || 0),
+          totalRevenueCents: Number(analyticsPayload.totalRevenueCents || 0),
+          bestSellers: Array.isArray(analyticsPayload.bestSellers) ? analyticsPayload.bestSellers : [],
+        });
 
         const countFrom = (pl) => Number(pl?.pagination?.total ?? 0);
 
@@ -204,7 +224,9 @@ export default function VendorDashboardBackoffice() {
             totalOrders: 0,
             totalUnits: 0,
             revenueCents: 0,
-            statusBreakdown: { processing: 0, shipped: 0, delivered: 0, cancelled: 0 },
+            completedOrders: 0,
+            completedRevenueCents: 0,
+            statusBreakdown: { new: 0, accepted: 0, in_progress: 0, completed: 0, rejected: 0, cancelled: 0 },
           }
         );
 
@@ -273,6 +295,11 @@ export default function VendorDashboardBackoffice() {
       return c > p && c > 0;
     }).length;
   }, [activeItems]);
+
+  const monthlyChartMax = useMemo(
+    () => Math.max(1, ...(monthlySales || []).map((m) => Number(m?.revenueCents || 0))),
+    [monthlySales]
+  );
 
   const draftsMissingPrimary = useMemo(() => {
     return draftItems.filter((it) => {
@@ -403,31 +430,97 @@ export default function VendorDashboardBackoffice() {
         <KPI label="On sale (page 1)" value={onSaleCount} icon={<FaPercent />} />
       </div>
 
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card
+          title="Estimated profit"
+          action={
+            <Link to="/vendor/sales-insights" className="text-xs font-semibold text-indigo-600 hover:underline">
+              Details
+            </Link>
+          }
+        >
+          <p className="text-xs text-gray-600">
+            Illustrative margin on your <strong>attributed revenue</strong> this year (same model as Sales insights — not tax or COGS advice).
+          </p>
+          <div className="mt-3 text-2xl font-bold text-gray-900">{money(insight.estimatedProfitCents)}</div>
+          <div className="mt-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+            <span className="font-medium text-gray-700">Attributed revenue (YTD):</span>{" "}
+            <span className="font-semibold text-gray-900">{money(insight.totalRevenueCents)}</span>
+          </div>
+        </Card>
+
+        <div className="lg:col-span-2">
+          <Card
+            title="Best-selling products"
+            action={
+              <Link to="/vendor/sales-insights" className="text-xs font-semibold text-indigo-600 hover:underline">
+                Full report
+              </Link>
+            }
+          >
+            <p className="mb-3 text-xs text-gray-500">By units sold across orders in your analytics window (product titles as on the order).</p>
+            {(insight.bestSellers || []).length === 0 ? (
+              <p className="text-sm text-gray-500">No sales volume yet — when orders roll in, top lines appear here.</p>
+            ) : (
+              <ul className="space-y-2">
+                {(insight.bestSellers || []).slice(0, 5).map((p) => (
+                  <li
+                    key={p.title}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50/80 px-3 py-2 text-sm"
+                  >
+                    <span className="min-w-0 truncate font-medium text-gray-900">{p.title}</span>
+                    <span className="shrink-0 text-right">
+                      <span className="font-semibold text-gray-900">{p.units} units</span>
+                      <span className="ml-2 text-xs text-gray-500">{money(p.revenueCents)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <Card title="Orders snapshot" action={<Link to="/vendor/orders" className="text-xs font-semibold text-indigo-600 hover:underline">Open</Link>}>
+        <Card title="Sales & orders" action={<Link to="/vendor/orders" className="text-xs font-semibold text-indigo-600 hover:underline">Open</Link>}>
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Orders</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Total orders</div>
               <div className="mt-1 text-xl font-bold text-gray-900">{orderSummary.totalOrders || 0}</div>
             </div>
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Units</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Completed orders</div>
+              <div className="mt-1 text-xl font-bold text-gray-900">
+                {orderSummary.completedOrders ?? orderSummary?.statusBreakdown?.completed ?? 0}
+              </div>
+            </div>
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-emerald-800">Sales revenue</div>
+              <div className="mt-0.5 text-[11px] text-emerald-900/80">From completed orders only</div>
+              <div className="mt-1 text-xl font-bold text-gray-900">
+                {money(orderSummary.completedRevenueCents ?? 0)}
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Units (all orders)</div>
               <div className="mt-1 text-xl font-bold text-gray-900">{orderSummary.totalUnits || 0}</div>
             </div>
-            <div className="col-span-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
-              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Revenue</div>
-              <div className="mt-1 text-xl font-bold text-gray-900">{money(orderSummary.revenueCents || 0)}</div>
+            <div className="col-span-2 rounded-xl border border-dashed border-gray-200 bg-white p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-gray-500">Order value (all statuses)</div>
+              <div className="mt-0.5 text-[11px] text-gray-500">Includes pending / in-progress — not only fulfilled sales</div>
+              <div className="mt-1 text-lg font-bold text-gray-900">{money(orderSummary.revenueCents || 0)}</div>
             </div>
           </div>
         </Card>
 
-        <Card title="Sales pulse (7 days)" action={<span className="text-xs font-semibold text-gray-500">Vendor-side</span>}>
-          <div className="space-y-2">
+        <Card title="Sales trends (7 days)" action={<span className="text-xs font-semibold text-gray-500">Recent activity</span>}>
+          <div className="mb-4 space-y-2">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Order count</div>
             {salesTrend.map((d) => {
               const maxOrders = Math.max(1, ...salesTrend.map((x) => x.orders || 0));
               const w = ((d.orders || 0) / maxOrders) * 100;
               return (
-                <div key={d.key} className="grid grid-cols-[46px_1fr_auto] items-center gap-2 text-xs">
+                <div key={`o-${d.key}`} className="grid grid-cols-[46px_1fr_auto] items-center gap-2 text-xs">
                   <div className="font-semibold text-gray-600">{d.label}</div>
                   <div className="h-2 overflow-hidden rounded-full bg-gray-100">
                     <div className="h-full rounded-full bg-indigo-500" style={{ width: `${w}%` }} />
@@ -437,17 +530,68 @@ export default function VendorDashboardBackoffice() {
               );
             })}
           </div>
+          <div className="space-y-2 border-t border-gray-100 pt-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Your revenue</div>
+            {salesTrend.map((d) => {
+              const maxRev = Math.max(1, ...salesTrend.map((x) => Number(x.revenueCents || 0)));
+              const w = ((Number(d.revenueCents || 0)) / maxRev) * 100;
+              return (
+                <div key={`r-${d.key}`} className="grid grid-cols-[46px_1fr_auto] items-center gap-2 text-xs">
+                  <div className="font-semibold text-gray-600">{d.label}</div>
+                  <div className="h-2 overflow-hidden rounded-full bg-emerald-100">
+                    <div className="h-full rounded-full bg-emerald-600" style={{ width: `${w}%` }} />
+                  </div>
+                  <div className="text-gray-700">{money(d.revenueCents || 0)}</div>
+                </div>
+              );
+            })}
+          </div>
         </Card>
 
         <Card title="Order statuses" action={<Link to="/vendor/orders" className="text-xs font-semibold text-indigo-600 hover:underline">Manage</Link>}>
           <div className="space-y-2 text-sm">
-            <StatusLine label="Processing" value={orderSummary?.statusBreakdown?.processing || 0} tone="amber" />
-            <StatusLine label="Shipped" value={orderSummary?.statusBreakdown?.shipped || 0} tone="blue" />
-            <StatusLine label="Delivered" value={orderSummary?.statusBreakdown?.delivered || 0} tone="green" />
+            <StatusLine label="New" value={orderSummary?.statusBreakdown?.new || 0} tone="green" />
+            <StatusLine label="Accepted" value={orderSummary?.statusBreakdown?.accepted || 0} tone="blue" />
+            <StatusLine label="In Progress" value={orderSummary?.statusBreakdown?.in_progress || 0} tone="amber" />
+            <StatusLine label="Completed" value={orderSummary?.statusBreakdown?.completed || 0} tone="green" />
             <StatusLine label="Cancelled" value={orderSummary?.statusBreakdown?.cancelled || 0} tone="gray" />
           </div>
         </Card>
       </div>
+
+      <Card
+        title="Monthly sales trend (revenue)"
+        action={
+          <Link to="/vendor/sales-insights" className="text-xs font-semibold text-indigo-600 hover:underline">
+            Full analytics
+          </Link>
+        }
+      >
+        <p className="mb-3 text-xs text-gray-500">
+          Longer-term trend: gross revenue by calendar month for your line items (analytics year-to-date). Taller bars = higher revenue.
+        </p>
+        {monthlySales.length === 0 ? (
+          <p className="text-sm text-gray-500">No monthly data yet — orders with your products will show up here.</p>
+        ) : (
+          <div className="flex items-end gap-2">
+            {monthlySales.slice(-12).map((m) => {
+              const barPx = Math.max(8, Math.round((Number(m.revenueCents || 0) / monthlyChartMax) * 100));
+              const label = m.month && m.month.length >= 7 ? m.month.slice(5) : m.month;
+              return (
+                <div key={m.month} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                  <div
+                    className="flex h-[104px] w-full items-end justify-center rounded bg-indigo-100/80"
+                    title={`${money(m.revenueCents || 0)} · ${m.month}`}
+                  >
+                    <div className="w-full rounded-sm bg-indigo-500" style={{ height: `${barPx}px` }} />
+                  </div>
+                  <div className="text-[10px] font-medium text-gray-600">{label}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card title="Store pipeline" action={<span className="text-xs font-semibold text-gray-500">Live counts</span>}>
@@ -512,6 +656,13 @@ export default function VendorDashboardBackoffice() {
             >
               <FaClipboardList className="text-indigo-600" />
               Orders
+            </Link>
+            <Link
+              to="/vendor/sales-insights"
+              className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 text-sm font-medium text-gray-700 hover:border-indigo-200 hover:bg-indigo-50/50 hover:text-indigo-700"
+            >
+              <FaChartLine className="text-indigo-600" />
+              Sales insights
             </Link>
           </div>
 

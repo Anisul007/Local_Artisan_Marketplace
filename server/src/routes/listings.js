@@ -81,6 +81,7 @@ router.post("/", async (req, res, next) => {
       images,
       seo: { slug: slugify(`${title}-${Date.now()}`) },
       inventory: { stockQty: 0, status: "draft" },
+      moderation: { status: "pending" },
     });
 
     return res.status(201).json({ ok: true, data: doc });
@@ -237,10 +238,14 @@ router.post("/:id/publish", async (req, res, next) => {
     row.inventory.status = "active";
     if (!row.publishedAt) row.publishedAt = new Date();
     row.archivedAt = null;
+    row.moderation = row.moderation || {};
+    row.moderation.status = "pending";
+    row.moderation.reviewedAt = null;
+    row.moderation.reviewedBy = null;
+    row.moderation.reviewNote = "";
 
     await row.save();
-    // 👇 Message for your toast "confirmation after publish"
-    return res.json({ ok: true, message: "Your listing is live!", data: row.toObject() });
+    return res.json({ ok: true, message: "Submitted for admin approval.", data: row.toObject() });
   } catch (e) {
     next(e);
   }
@@ -274,6 +279,11 @@ router.post("/:id/status", async (req, res, next) => {
     if (status === "active") {
       if (!doc.publishedAt) doc.publishedAt = new Date();
       doc.archivedAt = null;
+      doc.moderation = doc.moderation || {};
+      doc.moderation.status = "pending";
+      doc.moderation.reviewedAt = null;
+      doc.moderation.reviewedBy = null;
+      doc.moderation.reviewNote = "";
     } else if (status === "archived") {
       doc.archivedAt = new Date();
     } else if (status === "draft") {

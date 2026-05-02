@@ -26,6 +26,43 @@ const ShippingSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const OrderMessageSchema = new mongoose.Schema(
+  {
+    fromRole: { type: String, enum: ["vendor", "customer", "system"], required: true },
+    fromUser: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    text: { type: String, required: true, trim: true, maxlength: 2000 },
+    sentAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
+const OrderIssueSchema = new mongoose.Schema(
+  {
+    vendor: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    description: { type: String, required: true, trim: true, maxlength: 2000 },
+    status: {
+      type: String,
+      enum: ["open", "in_review", "resolved"],
+      default: "open",
+      index: true,
+    },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
+const StatusEventSchema = new mongoose.Schema(
+  {
+    from: { type: String, default: "", trim: true },
+    to: { type: String, required: true, trim: true },
+    actorRole: { type: String, enum: ["vendor", "customer", "system"], default: "system" },
+    actor: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    note: { type: String, default: "", trim: true, maxlength: 500 },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: true }
+);
+
 const OrderSchema = new mongoose.Schema(
   {
     orderNumber: { type: String, required: true, unique: true, index: true },
@@ -38,13 +75,34 @@ const OrderSchema = new mongoose.Schema(
     currency: { type: String, default: "AUD" },
     status: {
       type: String,
-      enum: ["processing", "shipped", "delivered", "cancelled"],
-      default: "processing",
+      enum: [
+        "new",
+        "accepted",
+        "rejected",
+        "in_progress",
+        "completed",
+        "processing",
+        "shipped",
+        "delivered",
+        "cancelled",
+      ],
+      default: "new",
       index: true,
     },
+    isNewForVendor: { type: Boolean, default: true, index: true },
+    vendorDecisionAt: { type: Date, default: null },
     shipping: { type: ShippingSchema, default: {} },
     estimatedDelivery: { type: Date, default: null },
     notes: { type: String, default: "" },
+    adminMeta: {
+      returnStatus: { type: String, default: "none" },
+      returnUpdatedAt: { type: Date, default: null },
+      /** Set when an admin opens the order in the control center; clears "new order" sidebar dot only. */
+      newOrderSeenAt: { type: Date, default: null },
+    },
+    statusHistory: { type: [StatusEventSchema], default: [] },
+    messages: { type: [OrderMessageSchema], default: [] },
+    issues: { type: [OrderIssueSchema], default: [] },
   },
   { timestamps: true }
 );

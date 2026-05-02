@@ -3,6 +3,7 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import Promotion from "../models/Promotion.js";
 import { requireAuth } from "../middleware/auth.js";
+import { validate, requiredString } from "../middleware/validate.js";
 
 const router = Router();
 
@@ -32,7 +33,18 @@ router.get("/", async (req, res, next) => {
 });
 
 // POST /api/vendor/promotions — create
-router.post("/", async (req, res, next) => {
+router.post(
+  "/",
+  validate({
+    body: [
+      requiredString("name"),
+      requiredString("type"),
+      (b = {}) => (b.value === undefined || b.value === null || b.value === "" ? "value is required" : null),
+      requiredString("startDate"),
+      requiredString("endDate"),
+    ],
+  }),
+  async (req, res, next) => {
   try {
     const vid = vendorId(req);
     const {
@@ -76,7 +88,8 @@ router.post("/", async (req, res, next) => {
   } catch (e) {
     next(e);
   }
-});
+  }
+);
 
 // GET /api/vendor/promotions/:id
 router.get("/:id", async (req, res, next) => {

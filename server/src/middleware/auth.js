@@ -1,5 +1,6 @@
 // server/middleware/auth.js
 import jwt from "jsonwebtoken";
+import User from "../models/User.js";
 
 /**
  * Create the auth cookie.
@@ -12,10 +13,14 @@ export function setAuthCookie(res, payload) {
   if (!secret) {
     throw new Error("JWT_SECRET is not set. Add it to server/.env (see .env.example).");
   }
-  const token = jwt.sign(payload, secret, { expiresIn: "7d" });
+  const token = jwt.sign(payload, secret, {
+    expiresIn: "7d",
+    algorithm: "HS256",
+    issuer: "artisan-avenue-api",
+  });
   const isProd = process.env.NODE_ENV === "production";
 
-res.cookie("aa_token", token, {
+  res.cookie("aa_token", token, {
     httpOnly: true,
     sameSite: "lax",          // keep as "lax" for local dev
     secure: isProd ? true : false,  // must be false on http://localhost
@@ -41,7 +46,7 @@ export function clearAuthCookie(res) {
 /**
  * Require a valid token in aa_token cookie.
  */
-export function requireAuth(req, res, next) {
+export async function requireAuth(req, res, next) {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
     return res.status(500).json({ ok: false, code: "NO_JWT_SECRET" });
@@ -49,7 +54,14 @@ export function requireAuth(req, res, next) {
   const token = req.cookies?.aa_token;
   if (!token) return res.status(401).json({ ok: false, code: "NO_TOKEN" });
   try {
-    req.user = jwt.verify(token, secret);
+    const payload = jwt.verify(token, secret, {
+      algorithms: ["HS256"],
+      issuer: "artisan-avenue-api",
+    });
+    const liveUser = await User.findById(payload.id).select("_id role isActive").lean();
+    if (!liveUser) return res.status(401).json({ ok: false, code: "NO_USER" });
+    if (liveUser.isActive === false) return res.status(403).json({ ok: false, code: "ACCOUNT_DEACTIVATED" });
+    req.user = { ...payload, role: liveUser.role, isActive: liveUser.isActive };
     next();
   } catch {
     return res.status(401).json({ ok: false, code: "BAD_TOKEN" });

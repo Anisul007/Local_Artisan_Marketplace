@@ -35,4 +35,17 @@ router.post("/", requireAuth, upload.array("files", 8), (req, res) => {
   res.json({ ok: true, urls });
 });
 
+router.use((err, _req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(400).json({ ok: false, message: "File too large. Max 3MB." });
+    }
+    return res.status(400).json({ ok: false, message: err.message || "Upload failed" });
+  }
+  if (err?.message?.includes("Only PNG/JPG/WEBP allowed")) {
+    return res.status(400).json({ ok: false, message: "Only PNG/JPG/WEBP allowed" });
+  }
+  return next(err);
+});
+
 export default router;

@@ -4,22 +4,23 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
-import Avatar from "../components/ux/Avatar";
-import Confirm from "../components/ux/Confirm";
+import Avatar from "../components/ui/Avatar";
+import Confirm from "../components/ui/Confirm";
 import { VendorAPI } from "../lib/api";
-import "./Navbar.css";
 import {
-  FaUser,
-  FaHeart,
-  FaShoppingCart,
-  FaSearch,
-  FaTimes,
-  FaTachometerAlt,
-  FaClipboardList,
-  FaStore,
-  FaBoxOpen,
-  FaTruck,
-} from "react-icons/fa";
+  User,
+  Heart,
+  ShoppingCart,
+  Search,
+  X,
+  LayoutDashboard,
+  ClipboardList,
+  Store,
+  Package,
+  Truck,
+  ShieldCheck,
+} from "lucide-react";
+import "./Navbar.css";
 
 export default function NavBar() {
   const { user, loading, logout } = useAuth();
@@ -31,6 +32,7 @@ export default function NavBar() {
   const [q, setQ] = useState("");
   const [vendorLogoUrl, setVendorLogoUrl] = useState(null);
   const isVendor = !!(user && (user.role === "vendor" || user.isVendor === true));
+  const isAdmin = user?.role === "admin";
 
   const accountRef = useRef(null);
 
@@ -81,7 +83,7 @@ export default function NavBar() {
     <header className="navbar">
       {/* Left: Logo */}
       <a href="/" className="logo">
-        <img src="/images/logo.png" alt="Artisan Avenue" />
+        <img src="/images/logo.webp" alt="Artisan Avenue" width="108" height="108" fetchPriority="high" />
       </a>
 
       {/* Center: links */}
@@ -113,7 +115,7 @@ export default function NavBar() {
                 ) : user ? (
                   <Avatar user={user} size={32} imageUrl={vendorLogoUrl} />
                 ) : (
-                  <FaUser />
+                  <User size={18} />
                 )}
               </button>
 
@@ -130,7 +132,33 @@ export default function NavBar() {
                         {user.firstName ? `Hi, ${user.firstName}!` : user.email}
                       </div>
 
-                      {isVendor ? (
+                      {isAdmin ? (
+                        <>
+                          <div className="dropdown-subheader">Admin</div>
+                          <div className="dropdown-grid">
+                            <Link
+                              to="/admin/dashboard"
+                              className="dropdown-item"
+                              onClick={() => setShowAccount(false)}
+                            >
+                              <span className="dropdown-item-icon">
+                                <ShieldCheck size={15} />
+                              </span>
+                              <span>Admin dashboard</span>
+                            </Link>
+                            <Link
+                              to="/admin/profile"
+                              className="dropdown-item"
+                              onClick={() => setShowAccount(false)}
+                            >
+                              <span className="dropdown-item-icon">
+                                <User size={15} />
+                              </span>
+                              <span>Admin profile</span>
+                            </Link>
+                          </div>
+                        </>
+                      ) : isVendor ? (
                         <>
                           <div className="dropdown-subheader">Vendor</div>
                           <div className="dropdown-grid">
@@ -140,7 +168,7 @@ export default function NavBar() {
                               onClick={() => setShowAccount(false)}
                             >
                               <span className="dropdown-item-icon">
-                                <FaTachometerAlt />
+                                <LayoutDashboard size={15} />
                               </span>
                               <span>Dashboard</span>
                             </Link>
@@ -150,7 +178,7 @@ export default function NavBar() {
                               onClick={() => setShowAccount(false)}
                             >
                               <span className="dropdown-item-icon">
-                                <FaBoxOpen />
+                                <Package size={15} />
                               </span>
                               <span>My listings</span>
                             </Link>
@@ -161,7 +189,7 @@ export default function NavBar() {
                                 onClick={() => setShowAccount(false)}
                               >
                                 <span className="dropdown-item-icon">
-                                  <FaStore />
+                                  <Store size={15} />
                                 </span>
                                 <span>Preview storefront</span>
                               </Link>
@@ -173,14 +201,34 @@ export default function NavBar() {
                           <div className="dropdown-subheader">Account</div>
                           <div className="dropdown-grid">
                             <Link
+                              to="/account"
+                              className="dropdown-item"
+                              onClick={() => setShowAccount(false)}
+                            >
+                              <span className="dropdown-item-icon">
+                                <LayoutDashboard size={15} />
+                              </span>
+                              <span>Dashboard</span>
+                            </Link>
+                            <Link
                               to="/orders"
                               className="dropdown-item"
                               onClick={() => setShowAccount(false)}
                             >
                               <span className="dropdown-item-icon">
-                                <FaClipboardList />
+                                <ClipboardList size={15} />
                               </span>
                               <span>My orders</span>
+                            </Link>
+                            <Link
+                              to="/account/profile"
+                              className="dropdown-item"
+                              onClick={() => setShowAccount(false)}
+                            >
+                              <span className="dropdown-item-icon">
+                                <User size={15} />
+                              </span>
+                              <span>Edit profile</span>
                             </Link>
                             <Link
                               to="/cart"
@@ -188,7 +236,7 @@ export default function NavBar() {
                               onClick={() => setShowAccount(false)}
                             >
                               <span className="dropdown-item-icon">
-                                <FaShoppingCart />
+                                <ShoppingCart size={15} />
                               </span>
                               <span>Cart</span>
                               {cartCount > 0 && (
@@ -201,7 +249,7 @@ export default function NavBar() {
                               onClick={() => setShowAccount(false)}
                             >
                               <span className="dropdown-item-icon">
-                                <FaHeart />
+                                <Heart size={15} />
                               </span>
                               <span>Wishlist</span>
                               {wishlistCount > 0 && (
@@ -214,7 +262,7 @@ export default function NavBar() {
                               onClick={() => setShowAccount(false)}
                             >
                               <span className="dropdown-item-icon">
-                                <FaTruck />
+                                <Truck size={15} />
                               </span>
                               <span>Help & contact</span>
                             </a>
@@ -237,35 +285,38 @@ export default function NavBar() {
               )}
             </div>
 
-            {/* Wishlist */}
-            <Link to="/wishlist" className="icon-btn icon-btn-wishlist" aria-label="Wishlist">
-              <FaHeart />
-              {wishlistCount > 0 && (
-                <span className="cart-badge">{wishlistCount > 99 ? "99+" : wishlistCount}</span>
-              )}
-            </Link>
+            {/* Wishlist + cart: customer shopping only; vendors cannot shop on the marketplace */}
+            {!isVendor && !isAdmin && (
+              <>
+                <Link to="/wishlist" className="icon-btn icon-btn-wishlist" aria-label="Wishlist">
+                  <Heart size={16} />
+                  {wishlistCount > 0 && (
+                    <span className="cart-badge">{wishlistCount > 99 ? "99+" : wishlistCount}</span>
+                  )}
+                </Link>
 
-            {/* Cart */}
-            <Link to="/cart" className="icon-btn icon-btn-cart" aria-label="Cart">
-              <FaShoppingCart />
-              {cartCount > 0 && (
-                <span className="cart-badge">{cartCount > 99 ? "99+" : cartCount}</span>
-              )}
-            </Link>
+                <Link to="/cart" className="icon-btn icon-btn-cart" aria-label="Cart">
+                  <ShoppingCart size={16} />
+                  {cartCount > 0 && (
+                    <span className="cart-badge">{cartCount > 99 ? "99+" : cartCount}</span>
+                  )}
+                </Link>
+              </>
+            )}
 
             {/* Search trigger */}
             <button className="icon-btn" aria-label="Open search" onClick={() => setSearchOpen(true)}>
-              <FaSearch />
+              <Search size={16} />
             </button>
           </>
         ) : (
           <form className="search" onSubmit={submitSearch}>
             <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search..." />
             <button className="search-submit" type="submit">
-              <FaSearch />
+              <Search size={16} />
             </button>
             <button type="button" className="search-close" onClick={() => setSearchOpen(false)}>
-              <FaTimes />
+              <X size={16} />
             </button>
           </form>
         )}
@@ -276,6 +327,7 @@ export default function NavBar() {
         open={confirmOpen}
         title="Log out?"
         message="You’ll be signed out of your account."
+        confirmLabel="Yes, log out"
         onCancel={() => setConfirmOpen(false)}
         onConfirm={async () => {
           setConfirmOpen(false);

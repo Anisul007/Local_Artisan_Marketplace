@@ -2,7 +2,8 @@ import mongoose from "mongoose";
 
 const PromotionSchema = new mongoose.Schema(
   {
-    vendor: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    vendor: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false, default: null, index: true },
+    scope: { type: String, enum: ["vendor", "global"], default: "vendor", index: true },
 
     name: { type: String, required: true, trim: true, maxlength: 120 },
     /** percentage (e.g. 10 = 10% off) or fixed_amount (e.g. 500 = $5 off) */
@@ -27,6 +28,7 @@ const PromotionSchema = new mongoose.Schema(
     listingIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Listing" }],
 
     active: { type: Boolean, default: true, index: true },
+    featuredCampaign: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

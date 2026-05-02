@@ -11,9 +11,10 @@ import {
   FaTimes,
   FaCubes,
   FaStar,
+  FaChartLine,
 } from "react-icons/fa";
 import { useAuth } from "../../../context/AuthContext";
-import { VendorAPI } from "../../../lib/api";
+import { VendorAPI, VendorOrdersAPI } from "../../../lib/api";
 
 const brand = {
   grad: "from-indigo-500 to-violet-600",
@@ -49,7 +50,7 @@ function StoreAvatar({ profile, user, size = 40 }) {
   );
 }
 
-const NavItem = ({ to, icon, children, onClick }) => (
+const NavItem = ({ to, icon, children, onClick, badge }) => (
   <NavLink
     to={to}
     onClick={onClick}
@@ -59,7 +60,15 @@ const NavItem = ({ to, icon, children, onClick }) => (
     }
   >
     <span className="text-[15px] opacity-90">{icon}</span>
-    <span>{children}</span>
+    <span className="min-w-0 flex-1">{children}</span>
+    {typeof badge === "number" && badge > 0 ? (
+      <span
+        className="shrink-0 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] font-bold leading-none text-white tabular-nums ring-2 ring-white/80"
+        title="Orders needing attention (new, reply needed, or open issue)"
+      >
+        {badge > 99 ? "99+" : badge}
+      </span>
+    ) : null}
   </NavLink>
 );
 
@@ -75,6 +84,7 @@ const NavGroup = ({ label, children }) => (
 export default function VendorLayout() {
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState(null);
+  const [ordersAttentionCount, setOrdersAttentionCount] = useState(0);
   const { user } = useAuth();
 
   const fetchProfile = () => {
@@ -95,6 +105,30 @@ export default function VendorLayout() {
     const onProfileUpdated = () => fetchProfile();
     window.addEventListener("vendor-profile-updated", onProfileUpdated);
     return () => window.removeEventListener("vendor-profile-updated", onProfileUpdated);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || user.role !== "vendor") return undefined;
+    let cancelled = false;
+    const tick = () => {
+      VendorOrdersAPI.notificationSummary()
+        .then((r) => {
+          if (cancelled || !r?.ok) return;
+          const d = r?.data?.data ?? r?.data ?? {};
+          const n = Number(d.ordersNeedingAttention);
+          setOrdersAttentionCount(Number.isFinite(n) ? n : 0);
+        })
+        .catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    const onOrdersChanged = () => tick();
+    window.addEventListener("vendor-orders-changed", onOrdersChanged);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      window.removeEventListener("vendor-orders-changed", onOrdersChanged);
+    };
   }, [user]);
 
   return (
@@ -158,9 +192,12 @@ export default function VendorLayout() {
               </NavGroup>
               <NavGroup label="Selling">
                 <NavItem to="/vendor/listings" icon={<FaBoxOpen />}>My Listings</NavItem>
-                <NavItem to="/vendor/orders" icon={<FaShoppingBag />}>Orders</NavItem>
+                <NavItem to="/vendor/orders" icon={<FaShoppingBag />} badge={ordersAttentionCount}>
+                  Orders
+                </NavItem>
                 <NavItem to="/vendor/inventory" icon={<FaCubes />}>Inventory</NavItem>
                 <NavItem to="/vendor/promotions" icon={<FaTag />}>Promotions</NavItem>
+                <NavItem to="/vendor/sales-insights" icon={<FaChartLine />}>Sales Insights</NavItem>
               </NavGroup>
               <NavGroup label="Account">
                 <NavItem to="/vendor/profile" icon={<FaUserCircle />}>Business Profile</NavItem>

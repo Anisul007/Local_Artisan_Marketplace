@@ -67,6 +67,7 @@ export const AuthAPI = {
   forgotStart:  (body) => apiPost("auth/forgot/start", body),
   forgotVerify: (body) => apiPost("auth/forgot/verify", body),
   forgotReset:  (body) => apiPost("auth/forgot/reset", body),
+  updateProfile:(body) => apiPatch("auth/profile", body),
 };
 
 // ---- Catalog (public) ----
@@ -151,11 +152,91 @@ export const VendorAPI = {
   },
 };
 
+export const AdminAPI = {
+  getProfile: () => apiGet("admin/profile"),
+  updateProfile: (payload) => apiPut("admin/profile", payload),
+  login: (body) => apiPost("auth/admin/login", body),
+  dashboard: () => apiGet("admin/dashboard"),
+  notificationSummary: () => apiGet("admin/notifications/summary"),
+  pendingListings: () => apiGet("admin/listings/pending"),
+  moderateListing: (id, decision, note = "") => apiPatch(`admin/listings/${id}/moderate`, { decision, note }),
+  vendors: ({ needsVerify = "", accountStatus = "" } = {}) => apiGet(`admin/vendors${qs({ needsVerify, accountStatus })}`),
+  deactivateVendor: (id) => apiPatch(`admin/vendors/${id}/deactivate`, {}),
+  reactivateVendor: (id) => apiPatch(`admin/vendors/${id}/reactivate`, {}),
+  deleteVendor: (id) => apiDelete(`admin/vendors/${id}`),
+  userDetail: (id) => apiGet(`admin/users/${id}`),
+  abuseReports: (status = "") => apiGet(`admin/abuse-reports${qs({ status })}`),
+  actionAbuseReport: (id, status, actionNote = "") => apiPatch(`admin/abuse-reports/${id}/action`, { status, actionNote }),
+  contactMessages: (status = "") => apiGet(`admin/contact-messages${qs({ status })}`),
+  respondContactMessage: (id, response) => apiPost(`admin/contact-messages/${id}/respond`, { response }),
+  customers: ({ q = "", status = "", needsVerify = "" } = {}) => apiGet(`admin/customers${qs({ q, status, needsVerify })}`),
+  customerOrders: (id) => apiGet(`admin/customers/${id}/orders`),
+  blockCustomer: (id) => apiPatch(`admin/customers/${id}/block`, {}),
+  unblockCustomer: (id) => apiPatch(`admin/customers/${id}/unblock`, {}),
+  deleteCustomer: (id) => apiDelete(`admin/customers/${id}`),
+  products: ({ q = "", status = "" } = {}) => apiGet(`admin/products${qs({ q, status })}`),
+  updateProduct: (id, payload) => apiPatch(`admin/products/${id}`, payload),
+  removeProduct: (id) => apiDelete(`admin/products/${id}`),
+  forceUnpublishProduct: (id) => apiPatch(`admin/products/${id}/force-unpublish`, {}),
+  bulkProducts: (action, ids) => apiPost("admin/products/bulk", { action, ids }),
+  categories: () => apiGet("admin/categories"),
+  createCategory: (payload) => apiPost("admin/categories", payload),
+  updateCategory: (id, payload) => apiPatch(`admin/categories/${id}`, payload),
+  deleteCategory: (id) => apiDelete(`admin/categories/${id}`),
+  brands: () => apiGet("admin/brands"),
+  createBrand: (payload) => apiPost("admin/brands", payload),
+  updateBrand: (id, payload) => apiPatch(`admin/brands/${id}`, payload),
+  deleteBrand: (id) => apiDelete(`admin/brands/${id}`),
+  orders: ({ q = "", status = "" } = {}) => apiGet(`admin/orders${qs({ q, status })}`),
+  getOrder: (id) => apiGet(`admin/orders/${id}`),
+  postOrderMessage: (id, text) => apiPost(`admin/orders/${id}/messages`, { text }),
+  updateOrderStatus: (id, status) => apiPatch(`admin/orders/${id}/status`, { status }),
+  cancelOrder: (id) => apiPatch(`admin/orders/${id}/cancel`, {}),
+  updateReturn: (id, state) => apiPatch(`admin/orders/${id}/return`, { state }),
+  payments: ({ status = "" } = {}) => apiGet(`admin/payments${qs({ status })}`),
+  refundDecision: (id, decision, reason = "") => apiPatch(`admin/payments/${id}/refund`, { decision, reason }),
+  shippingSettings: () => apiGet("admin/shipping-settings"),
+  updateShippingSettings: (payload) => apiPut("admin/shipping-settings", payload),
+  reviews: ({ status = "" } = {}) => apiGet(`admin/reviews${qs({ status })}`),
+  moderateReview: (id, action, note = "") => apiPatch(`admin/reviews/${id}/moderate`, { action, note }),
+  globalPromotions: () => apiGet("admin/promotions/global"),
+  createGlobalPromotion: (payload) => apiPost("admin/promotions/global", payload),
+  updateGlobalPromotion: (id, payload) => apiPatch(`admin/promotions/global/${id}`, payload),
+  deleteGlobalPromotion: (id) => apiDelete(`admin/promotions/global/${id}`),
+  settings: () => apiGet("admin/settings"),
+  updateSettings: (payload) => apiPut("admin/settings", payload),
+  exportReportUrl: ({ format = "excel", from = "", to = "" } = {}) =>
+    `${API}/api/admin/reports/export${qs({ format, from, to })}`,
+};
+
+export const ContactAPI = {
+  createMessage: (body) => apiPost("contact-messages", body),
+};
+
+export const AbuseReportsAPI = {
+  create: (body) => apiPost("abuse-reports", body),
+};
+
 // ---- Customer Orders (auth required) ----
 export const OrdersAPI = {
   create: (body) => apiPost("orders", body),
   list: () => apiGet("orders"),
   get: (id) => apiGet(`orders/${id}`),
+  sendMessage: (orderId, text) => apiPost(`orders/${orderId}/messages`, { text }),
+};
+
+// ---- Vendor order workflow + analytics ----
+export const VendorOrdersAPI = {
+  notificationSummary: () => apiGet("vendor/notifications/summary"),
+  list: ({ page = 1, limit = 20, status = "", q = "", sortBy = "date", sortDir = "desc" } = {}) =>
+    apiGet(`vendor/orders${qs({ page, limit, status, q, sortBy, sortDir })}`),
+  updateStatus: (orderId, status) => apiPatch(`vendor/orders/${orderId}/status`, { status }),
+  sendMessage: (orderId, text) => apiPost(`vendor/orders/${orderId}/messages`, { text }),
+  reportIssue: (orderId, description) => apiPost(`vendor/orders/${orderId}/issues`, { description }),
+  analytics: ({ from = "", to = "" } = {}) => apiGet(`vendor/analytics${qs({ from, to })}`),
+  issues: ({ status = "" } = {}) => apiGet(`vendor/issues${qs({ status })}`),
+  exportReportUrl: ({ format = "csv", from = "", to = "" } = {}) =>
+    `${API}/api/vendor/reports/export${qs({ format, from, to })}`,
 };
 
 // ---- Customer Reviews (auth for POST) ----

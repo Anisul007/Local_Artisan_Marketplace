@@ -1,8 +1,8 @@
 // src/pages/vendor/VendorProfilePage.jsx
 import { useEffect, useState } from "react";
 import { VendorAPI } from "../../lib/api";
-import Modal from "../../components/ux/Modal";
-import VendorProfileForm from "../../pages/vendor/VendorProfileForm.jsx"; // <-- fixed path
+import Modal from "../../components/ui/Modal";
+import VendorProfileForm from "./VendorProfileForm.jsx";
 
 export default function VendorProfilePage() {
   const [loading, setLoading] = useState(true);

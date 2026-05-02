@@ -45,6 +45,18 @@ const ListingSchema = new mongoose.Schema(
 
     publishedAt: { type: Date, default: null },
     archivedAt: { type: Date, default: null },
+    isFeatured: { type: Boolean, default: false, index: true },
+    moderation: {
+      status: {
+        type: String,
+        enum: ["pending", "approved", "rejected"],
+        default: "approved",
+        index: true,
+      },
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      reviewedAt: { type: Date, default: null },
+      reviewNote: { type: String, default: "", trim: true },
+    },
 
     ratingsCount: { type: Number, default: 0 },
     ratingAvg: { type: Number, default: 0 },

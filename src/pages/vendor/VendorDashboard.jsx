@@ -63,6 +63,7 @@ const quickLinks = [
   { to: "/vendor/orders", label: "View orders", icon: <FaClipboardList /> },
   { to: "/vendor/promotions", label: "Promotions", icon: <FaPercent /> },
   { to: "/vendor/inventory", label: "Inventory", icon: <FaCubes /> },
+  { to: "/vendor/sales-insights", label: "Sales insights", icon: <FaChartLine /> },
 ];
 
 export default function VendorDashboard() {
@@ -232,8 +233,8 @@ export default function VendorDashboard() {
                 {orders.map((o) => (
                   <tr key={o._id} className="border-t border-gray-100">
                     <td className="px-3 py-3 font-medium text-gray-900">{o.code || o._id}</td>
-                    <td className="px-3 py-3">{o.customerName || "—"}</td>
-                    <td className="px-3 py-3">{money(Number(o.total || 0) * 100)}</td>
+                    <td className="px-3 py-3">{o.customer?.name || "—"}</td>
+                    <td className="px-3 py-3">{money(Number(o.vendorTotalCents || 0), o.currency || "AUD")}</td>
                     <td className="px-3 py-3 text-gray-500">
                       {o.placedAt ? new Date(o.placedAt).toLocaleString() : "—"}
                     </td>

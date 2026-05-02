@@ -2,7 +2,8 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
-import { setAuthCookie, requireAuth } from "../middleware/auth.js";
+import { setAuthCookie, clearAuthCookie, requireAuth } from "../middleware/auth.js";
+import { validate, requiredString } from "../middleware/validate.js";
 import { ERR, isEmail, passwordStrong, isAuPhone } from "../utils/validators.js";
 import { sendErr } from "../utils/errors.js";
 import { sendMail } from "../utils/email.js";
@@ -22,6 +23,25 @@ function normalizeEmail(e = "") {
   return (e || "").toLowerCase().trim();
 }
 
+function parseAddressText(raw = "") {
+  const txt = String(raw || "").trim();
+  if (!txt) {
+    return { line1: "", line2: "", city: "", state: "", postcode: "", country: "AU", phone: "" };
+  }
+  const parts = txt.split(",").map((p) => p.trim()).filter(Boolean);
+  const line1 = parts[0] || txt;
+  const tail = parts.slice(1).join(" ");
+  const postcodeMatch = tail.match(/\b(\d{4})\b/);
+  const postcode = postcodeMatch ? postcodeMatch[1] : "";
+  const stateMatch = tail.match(/\b(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\b/i);
+  const state = stateMatch ? stateMatch[1].toUpperCase() : "";
+  const city = tail
+    .replace(/\b(NSW|VIC|QLD|WA|SA|TAS|ACT|NT)\b/gi, "")
+    .replace(/\b\d{4}\b/g, "")
+    .trim();
+  return { line1, line2: "", city, state, postcode, country: "AU", phone: "" };
+}
+
 // Alphanumeric **UPPERCASE** OTP – exclude 0/O and 1/I to avoid confusion when typing
 function generateOTP(length = 6) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -33,7 +53,12 @@ function generateOTP(length = 6) {
 }
 
 /* -------------------------------- REGISTER (with email OTP) -------------------------------- */
-router.post("/register", async (req, res) => {
+router.post(
+  "/register",
+  validate({
+    body: [requiredString("role"), requiredString("firstName"), requiredString("lastName"), requiredString("email"), requiredString("password")],
+  }),
+  async (req, res) => {
   try {
     const body = req.body || {};
     const role = body.role;
@@ -75,6 +100,20 @@ router.post("/register", async (req, res) => {
       const dob = body.dob ?? body.dateOfBirth;
       if (!dob) return sendErr(res, 400, ERR.REQUIRED, "dob required");
       doc.dob = new Date(dob);
+      if (body.shippingAddress && typeof body.shippingAddress === "object") {
+        const a = body.shippingAddress;
+        doc.shippingAddress = {
+          line1: String(a.line1 || "").trim(),
+          line2: String(a.line2 || "").trim(),
+          city: String(a.city || "").trim(),
+          state: String(a.state || "").trim(),
+          postcode: String(a.postcode || "").trim(),
+          country: String(a.country || "AU").trim() || "AU",
+          phone: String(a.phone || "").trim(),
+        };
+      } else {
+        doc.shippingAddress = parseAddressText(address);
+      }
     } else {
       const businessName = (body.businessName || "").trim();
       const phone        = (body.phone || "").trim();
@@ -133,10 +172,11 @@ router.post("/register", async (req, res) => {
     console.error("register error", err);
     return res.status(500).json({ ok: false, code: "ERR_SERVER" });
   }
-});
+  }
+);
 
 /* --------------------------------- VERIFY EMAIL ---------------------------------- */
-router.post("/verify-email", async (req, res) => {
+router.post("/verify-email", validate({ body: [requiredString("email"), requiredString("code")] }), async (req, res) => {
   try {
     const { email, code } = req.body || {};
     if (!email || !code) return sendErr(res, 400, ERR.REQUIRED, "email/code required");
@@ -195,7 +235,7 @@ router.post("/verify-email", async (req, res) => {
 });
 
 /* --------------------------------- RESEND OTP ---------------------------------- */
-router.post("/verify-email/resend", async (req, res) => {
+router.post("/verify-email/resend", validate({ body: [requiredString("email")] }), async (req, res) => {
   try {
     const { email } = req.body || {};
     if (!email) return sendErr(res, 400, ERR.REQUIRED, "email required");
@@ -237,7 +277,7 @@ router.post("/verify-email/resend", async (req, res) => {
 });
 
 /* --------------------------------- LOGIN ---------------------------------- */
-router.post("/login", async (req, res) => {
+router.post("/login", validate({ body: [requiredString("user"), requiredString("password")] }), async (req, res) => {
   try {
     const { user, password } = req.body || {};
     if (!user || !password) return sendErr(res, 400, ERR.REQUIRED, "user/password required");
@@ -245,6 +285,7 @@ router.post("/login", async (req, res) => {
     const query = user.includes("@") ? { email: user.toLowerCase() } : { username: user };
     const found = await User.findOne(query);
     if (!found) return sendErr(res, 401, ERR.AUTH_FAILED, "invalid credentials");
+    if (found.isActive === false) return sendErr(res, 403, "ERR_ACCOUNT_DEACTIVATED", "account deactivated");
 
     const ok = await bcrypt.compare(password, found.passwordHash);
     if (!ok) return sendErr(res, 401, ERR.AUTH_FAILED, "invalid credentials");
@@ -258,14 +299,30 @@ router.post("/login", async (req, res) => {
   }
 });
 
+/* ------------------------------- ADMIN LOGIN ---------------------------------- */
+router.post("/admin/login", validate({ body: [requiredString("email"), requiredString("password")] }), async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email || "");
+    const password = String(req.body?.password || "");
+    if (!email || !password) return sendErr(res, 400, ERR.REQUIRED, "email/password required");
+
+    const found = await User.findOne({ email, role: "admin" });
+    if (!found) return sendErr(res, 401, ERR.AUTH_FAILED, "invalid credentials");
+    if (found.isActive === false) return sendErr(res, 403, "ERR_ACCOUNT_DEACTIVATED", "account deactivated");
+    const ok = await bcrypt.compare(password, found.passwordHash);
+    if (!ok) return sendErr(res, 401, ERR.AUTH_FAILED, "invalid credentials");
+
+    setAuthCookie(res, found.safe());
+    return res.json({ ok: true, user: found.safe() });
+  } catch (err) {
+    console.error("admin login error", err);
+    return res.status(500).json({ ok: false, code: "ERR_SERVER" });
+  }
+});
+
 /* -------------------------------- LOGOUT ---------------------------------- */
 router.post("/logout", (_req, res) => {
-  res.clearCookie("aa_token", {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production" ? true : false,
-    path: "/",
-  });
+  clearAuthCookie(res);
   res.json({ ok: true });
 });
 
@@ -276,6 +333,90 @@ router.get("/me", requireAuth, async (req, res) => {
   res.json({ ok: true, user: user.safe() });
 });
 
+/* ------------------------------ UPDATE PROFILE ---------------------------- */
+router.patch("/profile", requireAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("+passwordHash");
+    if (!user) return res.status(404).json({ ok: false, message: "User not found" });
+    if (user.role !== "customer") {
+      return res.status(403).json({ ok: false, message: "Customer profile endpoint only" });
+    }
+
+    const body = req.body || {};
+    const firstName = body.firstName !== undefined ? String(body.firstName || "").trim() : undefined;
+    const lastName = body.lastName !== undefined ? String(body.lastName || "").trim() : undefined;
+    const email = body.email !== undefined ? normalizeEmail(body.email) : undefined;
+    const phone = body.phone !== undefined ? String(body.phone || "").trim() : undefined;
+    const address = body.address !== undefined ? String(body.address || "").trim() : undefined;
+    const shippingAddress = body.shippingAddress && typeof body.shippingAddress === "object" ? body.shippingAddress : null;
+    const currentPassword = body.currentPassword !== undefined ? String(body.currentPassword || "") : "";
+    const newPassword = body.newPassword !== undefined ? String(body.newPassword || "") : "";
+    const confirmPassword = body.confirmPassword !== undefined ? String(body.confirmPassword || "") : "";
+
+    if (firstName !== undefined) {
+      if (!firstName) return sendErr(res, 400, ERR.REQUIRED, "first name required");
+      user.firstName = firstName;
+    }
+    if (lastName !== undefined) {
+      if (!lastName) return sendErr(res, 400, ERR.REQUIRED, "last name required");
+      user.lastName = lastName;
+    }
+
+    if (email !== undefined) {
+      if (!email || !isEmail(email)) return sendErr(res, 400, ERR.INVALID_EMAIL, "invalid email");
+      const exists = await User.findOne({ email, _id: { $ne: user._id } }).lean();
+      if (exists) return sendErr(res, 409, ERR.EMAIL_TAKEN, "email already registered");
+      user.email = email;
+    }
+
+    if (phone !== undefined) {
+      if (phone && !isAuPhone(phone)) {
+        return sendErr(res, 400, ERR.INVALID_PHONE_AU, "invalid AU phone");
+      }
+      user.shippingAddress = { ...(user.shippingAddress?.toObject?.() || {}), phone };
+    }
+
+    if (address !== undefined) user.address = address;
+
+    if (shippingAddress) {
+      const next = {
+        line1: String(shippingAddress.line1 || "").trim(),
+        line2: String(shippingAddress.line2 || "").trim(),
+        city: String(shippingAddress.city || "").trim(),
+        state: String(shippingAddress.state || "").trim(),
+        postcode: String(shippingAddress.postcode || "").trim(),
+        country: String(shippingAddress.country || "AU").trim() || "AU",
+        phone: String(shippingAddress.phone || user.shippingAddress?.phone || "").trim(),
+      };
+      user.shippingAddress = next;
+      if (!user.address && next.line1) {
+        user.address = [next.line1, next.city, next.state, next.postcode].filter(Boolean).join(", ");
+      }
+    }
+
+    const wantsPasswordChange = !!(currentPassword || newPassword || confirmPassword);
+    if (wantsPasswordChange) {
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        return sendErr(res, 400, ERR.REQUIRED, "current/new/confirm password required");
+      }
+      const ok = await bcrypt.compare(currentPassword, user.passwordHash);
+      if (!ok) return sendErr(res, 400, ERR.AUTH_FAILED, "current password is incorrect");
+      if (!passwordStrong(newPassword)) return sendErr(res, 400, ERR.PASSWORD_WEAK, "weak password");
+      if (newPassword !== confirmPassword) {
+        return sendErr(res, 400, ERR.PASSWORD_MISMATCH, "passwords do not match");
+      }
+      user.passwordHash = await bcrypt.hash(newPassword, 10);
+    }
+
+    await user.save();
+    setAuthCookie(res, user.safe());
+    return res.json({ ok: true, user: user.safe(), message: "Profile updated" });
+  } catch (err) {
+    console.error("profile update error", err);
+    return res.status(500).json({ ok: false, code: "ERR_SERVER" });
+  }
+});
+
 /* ------------------------- FORGOT PASSWORD FLOW --------------------------- */
 /**
  * 1) POST /api/auth/forgot/start
@@ -283,7 +424,7 @@ router.get("/me", requireAuth, async (req, res) => {
  *    Always returns { ok:true } to avoid user enumeration.
  *    Generates a **UPPERCASE alphanumeric** code, stores hash + expiry (10m), emails code.
  */
-router.post("/forgot/start", async (req, res) => {
+router.post("/forgot/start", validate({ body: [requiredString("email")] }), async (req, res) => {
   try {
     const { email } = req.body || {};
     if (!email || !isEmail(email)) return sendErr(res, 400, ERR.REQUIRED, "Valid email required");
@@ -327,7 +468,7 @@ router.post("/forgot/start", async (req, res) => {
  *    Body: { email, code }
  *    Returns: { ok:true, resetToken } on success.
  */
-router.post("/forgot/verify", async (req, res) => {
+router.post("/forgot/verify", validate({ body: [requiredString("email"), requiredString("code")] }), async (req, res) => {
   try {
     const { email, code } = req.body || {};
     if (!email || !code) return sendErr(res, 400, ERR.REQUIRED, "email/code required");
@@ -379,7 +520,10 @@ router.post("/forgot/verify", async (req, res) => {
  * 3) POST /api/auth/forgot/reset
  *    Body: { email, resetToken, password, confirm }
  */
-router.post("/forgot/reset", async (req, res) => {
+router.post(
+  "/forgot/reset",
+  validate({ body: [requiredString("email"), requiredString("resetToken"), requiredString("password"), requiredString("confirm")] }),
+  async (req, res) => {
   try {
     const { email, resetToken, password, confirm } = req.body || {};
     if (!email || !resetToken || !password || !confirm)
@@ -404,18 +548,15 @@ router.post("/forgot/reset", async (req, res) => {
     user.passwordHash = await bcrypt.hash(password, 10);
     await user.save();
 
-    res.clearCookie("aa_token", {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production"
-    });
+    clearAuthCookie(res);
 
     return res.json({ ok: true });
   } catch (err) {
     console.error("forgot/reset error", err);
     return res.status(500).json({ ok: false, code: "ERR_SERVER" });
   }
-});
+  }
+);
 
 export default router;
 

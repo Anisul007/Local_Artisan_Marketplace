@@ -1,4 +1,4 @@
-// src/components/common/Pagination.jsx
+// Shared pagination controls (used by Blog and any list UIs)
 export default function Pagination({ page, pages, onPage }) {
   if (pages <= 1) return null;
   const prev = () => page > 1 && onPage(page - 1);
