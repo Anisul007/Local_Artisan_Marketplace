@@ -291,8 +291,9 @@ router.post("/login", validate({ body: [requiredString("user"), requiredString("
     if (!ok) return sendErr(res, 401, ERR.AUTH_FAILED, "invalid credentials");
 
     // direct login (no verified check, as requested)
-    setAuthCookie(res, found.safe());
-    return res.json({ ok: true, user: found.safe() });
+    const safeUser = found.safe();
+    const token = setAuthCookie(res, safeUser);
+    return res.json({ ok: true, user: safeUser, token });
   } catch (err) {
     console.error("login error", err);
     return res.status(500).json({ ok: false, code: "ERR_SERVER" });
@@ -312,8 +313,9 @@ router.post("/admin/login", validate({ body: [requiredString("email"), requiredS
     const ok = await bcrypt.compare(password, found.passwordHash);
     if (!ok) return sendErr(res, 401, ERR.AUTH_FAILED, "invalid credentials");
 
-    setAuthCookie(res, found.safe());
-    return res.json({ ok: true, user: found.safe() });
+    const safeUser = found.safe();
+    const token = setAuthCookie(res, safeUser);
+    return res.json({ ok: true, user: safeUser, token });
   } catch (err) {
     console.error("admin login error", err);
     return res.status(500).json({ ok: false, code: "ERR_SERVER" });

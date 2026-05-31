@@ -4,7 +4,12 @@ import { requireAuth } from "../middleware/auth.js";
 import Listing from "../models/Listing.js";
 import Order from "../models/Order.js";
 import User from "../models/User.js";
+import VendorProfile from "../models/VendorProfile.js";
 import { sendMail } from "../utils/email.js";
+import { buildVendorSalesPdf } from "../utils/marketplace-report-pdf.js";
+import { buildVendorNotificationFeed, markVendorNotificationsSeen } from "../utils/vendor-notifications.js";
+import { flagRefundForOrder } from "../utils/payment-refund.js";
+import { releaseOrderInventoryIfNeeded } from "../utils/order-inventory.js";
 
 const router = Router();
 const ORDER_STATUSES = ["new", "accepted", "rejected", "in_progress", "completed", "cancelled"];
@@ -18,6 +23,75 @@ const statusAlias = {
 function canonicalStatus(status) {
   const s = String(status || "").trim().toLowerCase();
   return statusAlias[s] || s || "new";
+}
+
+/** Cancelled/rejected orders must not count toward revenue, profit, or units sold. */
+function countsTowardSales(status) {
+  const s = canonicalStatus(status);
+  return s !== "cancelled" && s !== "rejected";
+}
+
+async function buildVendorWeeklyTrend(vendorId, days = 7) {
+  const vendorObjId = new mongoose.Types.ObjectId(String(vendorId));
+  const end = new Date();
+  end.setHours(23, 59, 59, 999);
+  const start = new Date(end);
+  start.setDate(start.getDate() - (days - 1));
+  start.setHours(0, 0, 0, 0);
+
+  const orderRows = await Order.aggregate([
+    { $match: { createdAt: { $gte: start, $lte: end } } },
+    { $unwind: "$items" },
+    {
+      $lookup: {
+        from: "listings",
+        localField: "items.listing",
+        foreignField: "_id",
+        as: "listingDoc",
+      },
+    },
+    { $unwind: "$listingDoc" },
+    { $match: { "listingDoc.vendor": vendorObjId } },
+    {
+      $group: {
+        _id: "$_id",
+        dayKey: { $first: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } } },
+        status: { $first: "$status" },
+        vendorRevenueCents: {
+          $sum: {
+            $multiply: [{ $ifNull: ["$items.priceCents", 0] }, { $ifNull: ["$items.quantity", 0] }],
+          },
+        },
+      },
+    },
+  ]);
+
+  const dayKeys = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(end);
+    d.setDate(d.getDate() - i);
+    d.setHours(12, 0, 0, 0);
+    dayKeys.push({
+      key: d.toISOString().slice(0, 10),
+      label: d.toLocaleDateString("en-AU", { weekday: "short" }),
+    });
+  }
+
+  const trendMap = Object.fromEntries(dayKeys.map((d) => [d.key, { orders: 0, revenueCents: 0 }]));
+  for (const row of orderRows) {
+    if (!countsTowardSales(row.status)) continue;
+    const bucket = trendMap[row.dayKey];
+    if (!bucket) continue;
+    bucket.orders += 1;
+    bucket.revenueCents += Number(row.vendorRevenueCents || 0);
+  }
+
+  return dayKeys.map(({ key, label }) => ({
+    key,
+    label,
+    orders: trendMap[key]?.orders ?? 0,
+    revenueCents: trendMap[key]?.revenueCents ?? 0,
+  }));
 }
 
 function prettyStatus(status) {
@@ -36,45 +110,6 @@ function escapeCsv(v) {
   const s = String(v ?? "");
   if (/[",\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
-}
-
-function simplePdfBuffer(title, lines = []) {
-  const toPdfText = (v) =>
-    String(v ?? "")
-      .replace(/[^\x20-\x7E]/g, " ")
-      .replace(/\\/g, "\\\\")
-      .replace(/\(/g, "\\(")
-      .replace(/\)/g, "\\)");
-  const allLines = [title, "", ...lines].slice(0, 55);
-  const drawOps = ["BT", "/F1 11 Tf", "50 770 Td"];
-  for (let i = 0; i < allLines.length; i += 1) {
-    if (i > 0) drawOps.push("0 -14 Td");
-    drawOps.push(`(${toPdfText(allLines[i])}) Tj`);
-  }
-  drawOps.push("ET");
-  const stream = drawOps.join("\n");
-  const streamLength = Buffer.byteLength(stream, "binary");
-  const objects = [
-    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
-    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
-    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj",
-    "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
-    `5 0 obj << /Length ${streamLength} >> stream\n${stream}\nendstream endobj`,
-  ];
-  let pdf = "%PDF-1.4\n";
-  const offsets = [0];
-  for (const obj of objects) {
-    offsets.push(pdf.length);
-    pdf += `${obj}\n`;
-  }
-  const xrefStart = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n`;
-  pdf += "0000000000 65535 f \n";
-  for (let i = 1; i < offsets.length; i++) {
-    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  }
-  pdf += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
-  return Buffer.from(pdf, "binary");
 }
 
 async function vendorOwnsOrder(vendorId, orderId) {
@@ -107,7 +142,41 @@ router.get("/summary", requireAuth, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// GET /api/vendor/notifications/summary — sidebar badges (orders / messages / issues)
+// GET /api/vendor/notifications — inbox feed (orders, messages, issues, moderation, reports)
+router.get("/notifications", requireAuth, async (req, res, next) => {
+  try {
+    if (req.user?.role !== "vendor") {
+      return res.status(403).json({ ok: false, message: "Vendor access only" });
+    }
+    const vendorId = req.user?._id || req.user?.id;
+    if (!vendorId || !mongoose.Types.ObjectId.isValid(vendorId)) {
+      return res.status(400).json({ ok: false, message: "Invalid vendor id" });
+    }
+    const feed = await buildVendorNotificationFeed(vendorId);
+    return res.json({ ok: true, data: feed });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// POST /api/vendor/notifications/mark-seen
+router.post("/notifications/mark-seen", requireAuth, async (req, res, next) => {
+  try {
+    if (req.user?.role !== "vendor") {
+      return res.status(403).json({ ok: false, message: "Vendor access only" });
+    }
+    const vendorId = req.user?._id || req.user?.id;
+    if (!vendorId || !mongoose.Types.ObjectId.isValid(vendorId)) {
+      return res.status(400).json({ ok: false, message: "Invalid vendor id" });
+    }
+    const at = await markVendorNotificationsSeen(vendorId);
+    return res.json({ ok: true, data: { notificationsLastSeenAt: at } });
+  } catch (e) {
+    next(e);
+  }
+});
+
+// GET /api/vendor/notifications/summary — sidebar badges
 router.get("/notifications/summary", requireAuth, async (req, res, next) => {
   try {
     if (req.user?.role !== "vendor") {
@@ -117,73 +186,8 @@ router.get("/notifications/summary", requireAuth, async (req, res, next) => {
     if (!vendorId || !mongoose.Types.ObjectId.isValid(vendorId)) {
       return res.status(400).json({ ok: false, message: "Invalid vendor id" });
     }
-    const vendorObjId = new mongoose.Types.ObjectId(vendorId);
-
-    const pipeline = [
-      { $sort: { createdAt: -1 } },
-      { $unwind: "$items" },
-      {
-        $lookup: {
-          from: "listings",
-          localField: "items.listing",
-          foreignField: "_id",
-          as: "listingDoc",
-        },
-      },
-      { $unwind: "$listingDoc" },
-      { $match: { "listingDoc.vendor": vendorObjId } },
-      {
-        $group: {
-          _id: "$_id",
-          status: { $first: "$status" },
-          messages: { $first: "$messages" },
-          issues: { $first: "$issues" },
-        },
-      },
-    ];
-    const rows = await Order.aggregate(pipeline);
-
-    let newOrders = 0;
-    let awaitingReply = 0;
-    let openIssues = 0;
-    const attentionOrderIds = new Set();
-
-    for (const r of rows) {
-      const st = canonicalStatus(r.status);
-      if (st === "new") newOrders += 1;
-
-      const msgs = Array.isArray(r.messages) ? r.messages : [];
-      if (msgs.length > 0) {
-        const sorted = [...msgs].sort((a, b) => new Date(a.sentAt || 0) - new Date(b.sentAt || 0));
-        const last = sorted[sorted.length - 1];
-        if (last && (last.fromRole === "customer" || last.fromRole === "system")) {
-          awaitingReply += 1;
-        }
-      }
-
-      const issues = Array.isArray(r.issues) ? r.issues : [];
-      openIssues += issues.filter((i) => i.status === "open").length;
-
-      let needs = false;
-      if (st === "new") needs = true;
-      if (msgs.length > 0) {
-        const sorted = [...msgs].sort((a, b) => new Date(a.sentAt || 0) - new Date(b.sentAt || 0));
-        const last = sorted[sorted.length - 1];
-        if (last && (last.fromRole === "customer" || last.fromRole === "system")) needs = true;
-      }
-      if (issues.some((i) => i.status === "open")) needs = true;
-      if (needs) attentionOrderIds.add(String(r._id));
-    }
-
-    return res.json({
-      ok: true,
-      data: {
-        newOrders,
-        awaitingReply,
-        openIssues,
-        ordersNeedingAttention: attentionOrderIds.size,
-      },
-    });
+    const feed = await buildVendorNotificationFeed(vendorId);
+    return res.json({ ok: true, data: feed.summary });
   } catch (e) {
     next(e);
   }
@@ -336,8 +340,10 @@ router.get("/orders", requireAuth, async (req, res, next) => {
     const summary = items.reduce(
       (acc, o) => {
         acc.totalOrders += 1;
-        acc.totalUnits += Number(o.vendorItemCount || 0);
-        acc.revenueCents += Number(o.vendorTotalCents || 0);
+        if (countsTowardSales(o.status)) {
+          acc.totalUnits += Number(o.vendorItemCount || 0);
+          acc.revenueCents += Number(o.vendorTotalCents || 0);
+        }
         if (acc.statusBreakdown[o.status] != null) acc.statusBreakdown[o.status] += 1;
         if (o.status === "completed") {
           acc.completedOrders += 1;
@@ -443,6 +449,11 @@ router.patch("/orders/:id/status", requireAuth, async (req, res, next) => {
     });
     order.status = nextStatus;
     await order.save();
+    await releaseOrderInventoryIfNeeded(order, nextStatus);
+
+    if (["cancelled", "rejected"].includes(nextStatus)) {
+      await flagRefundForOrder(order._id, `Order ${nextStatus} by vendor`);
+    }
 
     const customer = await User.findById(order.customer).select("email firstName").lean();
     if (customer?.email) {
@@ -460,6 +471,10 @@ router.patch("/orders/:id/status", requireAuth, async (req, res, next) => {
         subject = `Your order ${order.orderNumber} could not be fulfilled`;
         text = `${greet}\n\nA vendor has declined order ${order.orderNumber}. You will not be charged for items from this seller, or any refund will follow your payment provider’s timing.\n\nOpen My orders in your account for the latest status.\n`;
         html = `<p>${greet}</p><p>A vendor has <strong>declined</strong> order <strong>${order.orderNumber}</strong>. You will not be charged for items from this seller, or any refund will follow your payment provider’s timing.</p><p>Open <strong>My orders</strong> in your account for the latest status.</p>`;
+      } else if (nextStatus === "completed") {
+        subject = `Your order ${order.orderNumber} was delivered`;
+        text = `${greet}\n\nYour order ${order.orderNumber} has been marked as delivered. We hope you love your purchase!\n\nYou can leave a review for each item from the product page or from Notifications in your account.\n\nView order: ${process.env.APP_URL || ""}/orders/${order._id}/success\n`;
+        html = `<p>${greet}</p><p>Your order <strong>${order.orderNumber}</strong> has been marked as <strong>delivered</strong>. We hope you love your purchase!</p><p>You can leave a review for each item from the product page or from <strong>Notifications</strong> in your account.</p>`;
       }
 
       try {
@@ -631,6 +646,8 @@ router.get("/analytics", requireAuth, async (req, res, next) => {
     const completedOrderIds = new Set();
 
     for (const r of rows) {
+      if (!countsTowardSales(r.status)) continue;
+
       const month = new Date(r.createdAt).toISOString().slice(0, 7);
       if (!monthly[month]) monthly[month] = { month, revenueCents: 0, units: 0 };
       monthly[month].revenueCents += Number(r.lineTotalCents || 0);
@@ -646,6 +663,7 @@ router.get("/analytics", requireAuth, async (req, res, next) => {
     const estimatedProfitCents = Math.round(totalRevenueCents * 0.35);
     const bestSellers = Object.values(productMap).sort((a, b) => b.units - a.units).slice(0, 5);
     const monthlySales = Object.values(monthly).sort((a, b) => a.month.localeCompare(b.month));
+    const weeklyTrend = await buildVendorWeeklyTrend(vendorId, 7);
 
     return res.json({
       ok: true,
@@ -655,6 +673,7 @@ router.get("/analytics", requireAuth, async (req, res, next) => {
         estimatedProfitCents,
         monthlySales,
         bestSellers,
+        weeklyTrend,
       },
     });
   } catch (e) {
@@ -699,11 +718,19 @@ router.get("/reports/export", requireAuth, async (req, res, next) => {
     ]);
 
     if (format === "pdf") {
-      const lines = rows.slice(0, 150).map(
-        (r) =>
-          `${r.orderNumber} | ${new Date(r.createdAt).toLocaleDateString()} | ${prettyStatus(r.status)} | ${r.title} x${r.quantity} | ${(Number(r.lineTotalCents || 0) / 100).toFixed(2)} AUD`
-      );
-      const pdf = simplePdfBuffer("Vendor Sales Report", lines);
+      const [profile, userDoc] = await Promise.all([
+        VendorProfile.findOne({ user: vendorId }).lean(),
+        User.findById(vendorId).select("name email").lean(),
+      ]);
+      const pdf = await buildVendorSalesPdf({
+        vendor: profile || {},
+        user: userDoc || {},
+        period: { from, to },
+        rows: rows.map((r) => ({
+          ...r,
+          statusLabel: prettyStatus(r.status),
+        })),
+      });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="sales-report-${Date.now()}.pdf"`);
       return res.send(pdf);

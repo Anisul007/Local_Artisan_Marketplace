@@ -92,10 +92,10 @@ export default function MyOrders() {
               ? new Date(order.estimatedDelivery).toLocaleDateString()
               : "—";
             return (
+              <div key={order._id} className="rounded-xl border border-gray-200 bg-white hover:shadow-md transition">
               <Link
-                key={order._id}
                 to={`/orders/${order._id}/success`}
-                className="block rounded-xl border border-gray-200 bg-white p-4 hover:shadow-md transition"
+                className="block p-4"
               >
                 <div className="flex justify-between items-start">
                   <div>
@@ -142,6 +142,15 @@ export default function MyOrders() {
                   </p>
                 )}
               </Link>
+              <div className="border-t border-gray-100 px-4 py-2">
+                <Link
+                  to={`/account/report-abuse?targetType=order&targetId=${order._id}&targetLabel=${encodeURIComponent(order.orderNumber || "Order")}`}
+                  className="text-xs font-semibold text-rose-700 hover:underline"
+                >
+                  Report an issue with this order
+                </Link>
+              </div>
+              </div>
             );
           })}
         </div>

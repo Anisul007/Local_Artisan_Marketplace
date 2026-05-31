@@ -35,10 +35,10 @@ export default function AdminAbuseReportsPage() {
   }
 
   return (
-    <div className="rounded-2xl border border-white/15 bg-slate-900/70 p-5 shadow-xl shadow-black/25">
+    <div className="admin-card">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-bold text-white">Abuse Reports</h1>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-10 rounded-lg border border-white/20 bg-white/5 px-3 text-sm text-slate-100">
+        <h1 className="admin-card-title">Abuse Reports</h1>
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className="admin-select">
           <option value="">All</option>
           <option value="new">New</option>
           <option value="in_review">In review</option>
@@ -48,15 +48,15 @@ export default function AdminAbuseReportsPage() {
       {err && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{err}</div>}
       <div className="mt-4 space-y-3">
         {items.length === 0 ? (
-          <p className="text-sm text-slate-400">No reports found.</p>
+          <p className="admin-muted">No reports found.</p>
         ) : (
           items.map((r) => (
             <div
               key={r._id}
               className={`rounded-xl border p-3 ${
                 r.status === "new"
-                  ? "border-l-4 border-l-rose-500 border-y border-r border-white/15 bg-rose-500/[0.06]"
-                  : "border border-white/15 bg-white/[0.03]"
+                  ? "border-l-4 border-l-rose-500 border-y border-r border-gray-200 bg-rose-500/[0.06]"
+                  : "border border-gray-200 bg-gray-50"
               }`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -64,27 +64,36 @@ export default function AdminAbuseReportsPage() {
                   {r.status === "new" && (
                     <span className="rounded-full bg-rose-600/90 px-2 py-0.5 text-[10px] font-bold uppercase text-white">Needs review</span>
                   )}
-                  <div className="text-sm font-semibold text-white">{r.reason}</div>
+                  <div className="text-sm font-semibold text-gray-900">{r.reason}</div>
                 </div>
-                <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-semibold text-amber-300">{r.status}</span>
+                <span className="admin-badge-warn text-xs normal-case">{r.status}</span>
               </div>
-              <div className="mt-1 text-xs text-slate-400">
-                Reporter: {r.reporterName || "Unknown"} {r.reporterEmail ? `(${r.reporterEmail})` : ""} · Date:{" "}
+              <div className="mt-1 text-xs text-gray-500">
+                Reporter: {r.reporterName || "Unknown"}
+                {r.reporterEmail ? ` (${r.reporterEmail})` : ""}
+                {r.reporterRole ? ` · ${r.reporterRole}` : ""} ·{" "}
                 {r.createdAt ? new Date(r.createdAt).toLocaleString() : "—"}
               </div>
-              <p className="mt-2 text-sm text-slate-300">{r.details || "No details provided."}</p>
+              {r.targetType && r.targetType !== "other" && (
+                <div className="mt-1 text-xs text-gray-600">
+                  About: <span className="font-medium capitalize">{r.targetType}</span>
+                  {r.targetLabel ? ` — ${r.targetLabel}` : ""}
+                  {r.targetId ? ` (ID: ${r.targetId})` : ""}
+                </div>
+              )}
+              <p className="mt-2 text-sm text-gray-600">{r.details || "No details provided."}</p>
               <textarea
                 value={actionNote[r._id] || ""}
                 onChange={(e) => setActionNote((p) => ({ ...p, [r._id]: e.target.value }))}
                 rows={2}
                 placeholder="Action note..."
-                className="mt-2 w-full rounded-lg border border-white/20 bg-white/5 p-2 text-sm text-slate-100 placeholder:text-slate-400"
+                className="mt-2 w-full rounded-lg border border-gray-200 bg-white p-2 text-sm text-gray-900 placeholder:text-gray-400"
               />
               <div className="mt-2 flex gap-2">
-                <button onClick={() => act(r._id, "in_review")} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500">
+                <button onClick={() => act(r._id, "in_review")} className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-gray-900 hover:bg-blue-500">
                   Mark In Review
                 </button>
-                <button onClick={() => act(r._id, "resolved")} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500">
+                <button onClick={() => act(r._id, "resolved")} className="admin-btn admin-btn-sm admin-btn-success">
                   Resolve
                 </button>
               </div>

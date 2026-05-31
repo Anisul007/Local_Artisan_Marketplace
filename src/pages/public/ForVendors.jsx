@@ -367,7 +367,7 @@ export default function ForMakersPage() {
                     key={v.id}
                     className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm hover:shadow-md transition"
                   >
-                    <div className="p-5">
+                    <Link to={`/makers/${v.id}?tab=about`} className="block p-5 hover:bg-gray-50/80 transition">
                       <div className="flex items-start gap-4">
                         <div className="h-16 w-16 rounded-2xl overflow-hidden bg-gray-100 shrink-0">
                           <img
@@ -396,19 +396,20 @@ export default function ForMakersPage() {
                         </div>
                       </div>
 
-                      <div className="mt-4 flex items-center justify-between gap-4">
-                        <label className="flex items-center gap-2 text-xs text-gray-700 select-none">
-                          <input
-                            type="checkbox"
-                            checked={compareIds.includes(v.id)}
-                            onChange={() => toggleCompare(v.id)}
-                          />
-                          Compare
-                        </label>
-                        <Link to={`/makers/${v.id}?tab=products`} className="text-sm font-semibold text-purple-700 hover:underline whitespace-nowrap">
-                          Preview store →
-                        </Link>
-                      </div>
+                      <p className="mt-3 text-sm font-semibold text-purple-700">View full profile →</p>
+                    </Link>
+                    <div className="px-5 pb-4 flex items-center justify-between gap-4 border-t border-gray-100">
+                      <label className="flex items-center gap-2 text-xs text-gray-700 select-none">
+                        <input
+                          type="checkbox"
+                          checked={compareIds.includes(v.id)}
+                          onChange={() => toggleCompare(v.id)}
+                        />
+                        Compare
+                      </label>
+                      <Link to={`/makers/${v.id}?tab=products`} className="text-sm font-semibold text-purple-700 hover:underline whitespace-nowrap">
+                        Shop products →
+                      </Link>
                     </div>
                   </div>
                 ))}

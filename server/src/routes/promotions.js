@@ -71,8 +71,10 @@ router.post(
 
     const listingIdArr = Array.isArray(listingIds) ? listingIds.filter((id) => mongoose.Types.ObjectId.isValid(id)) : [];
 
+    const vendorOid = mongoose.Types.ObjectId.isValid(vid) ? new mongoose.Types.ObjectId(vid) : vid;
     const doc = await Promotion.create({
-      vendor: vid,
+      vendor: vendorOid,
+      scope: "vendor",
       name: name.trim(),
       type,
       value: numVal,
@@ -81,10 +83,15 @@ router.post(
       startDate: start,
       endDate: end,
       listingIds: listingIdArr,
-      active: !!active,
+      active: false,
+      moderation: { status: "pending", reviewNote: "" },
     });
 
-    return res.status(201).json({ ok: true, data: doc });
+    return res.status(201).json({
+      ok: true,
+      message: "Promotion submitted for admin approval. It will apply on the storefront after approval.",
+      data: doc,
+    });
   } catch (e) {
     next(e);
   }
@@ -144,10 +151,19 @@ router.put("/:id", async (req, res, next) => {
     if (endDate !== undefined) doc.endDate = new Date(endDate);
     if (doc.startDate >= doc.endDate) return res.status(400).json({ ok: false, message: "endDate must be after startDate" });
     if (listingIds !== undefined) doc.listingIds = Array.isArray(listingIds) ? listingIds.filter((id) => mongoose.Types.ObjectId.isValid(id)) : [];
-    if (active !== undefined) doc.active = !!active;
+
+    doc.moderation = doc.moderation || {};
+    doc.moderation.status = "pending";
+    doc.moderation.reviewedAt = null;
+    doc.moderation.reviewedBy = null;
+    doc.active = false;
 
     await doc.save();
-    return res.json({ ok: true, data: doc });
+    return res.json({
+      ok: true,
+      message: "Changes saved and sent for admin re-approval.",
+      data: doc,
+    });
   } catch (e) {
     next(e);
   }

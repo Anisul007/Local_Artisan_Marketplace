@@ -64,6 +64,8 @@ export default function Cart() {
         {items.map((item, index) => {
           const key = item.listingId || item.slug || item.title;
           const productUrl = item.slug ? `/product/${item.slug}` : "#";
+          const stockLimit = item.stockQty != null ? Number(item.stockQty) : null;
+          const atMax = stockLimit != null && item.quantity >= stockLimit;
           return (
             <div
               key={key}
@@ -90,6 +92,11 @@ export default function Cart() {
                   {item.title}
                 </Link>
                 <p className="text-gray-600 mt-0.5">{money(item.priceCents * item.quantity, item.currency)}</p>
+                {stockLimit != null && (
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {stockLimit > 0 ? `${stockLimit} in stock` : "Out of stock"}
+                  </p>
+                )}
                 <div className="flex items-center gap-2 mt-2">
                   <div className="flex items-center rounded-lg border border-gray-300 overflow-hidden">
                     <button
@@ -104,7 +111,8 @@ export default function Cart() {
                     <button
                       type="button"
                       aria-label="Increase quantity"
-                      disabled={purchaseBlocked}
+                      disabled={purchaseBlocked || atMax}
+                      title={atMax ? `Only ${stockLimit} available` : undefined}
                       className="w-9 h-9 flex items-center justify-center text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
                       onClick={() => updateQuantity(item.listingId || item.slug, item.quantity + 1)}
                     >

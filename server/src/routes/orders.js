@@ -2,7 +2,13 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import Order from "../models/Order.js";
 import Listing from "../models/Listing.js";
-import Promotion from "../models/Promotion.js";
+import {
+  findLiveCouponPromotion,
+  computeCartDiscountForPromo,
+  applyAutoPromoToListing,
+  bestAutoPromoForListing,
+  loadLiveAutoPromos,
+} from "../utils/promotion-utils.js";
 import VendorProfile from "../models/VendorProfile.js";
 import { requireAuth } from "../middleware/auth.js";
 import { validate } from "../middleware/validate.js";
@@ -10,8 +16,12 @@ import { sendMail } from "../utils/email.js";
 import User from "../models/User.js";
 import PaymentTransaction from "../models/PaymentTransaction.js";
 import { chargePayment } from "../utils/payment-gateway.js";
+import { createOrderWithStockReservation } from "../utils/order-inventory.js";
 
 const router = Router();
+
+const SHIPPING_RATES_CENTS = { standard: 995, express: 1995 };
+const DELIVERY_DAYS = { standard: 7, express: 3 };
 
 function getOrderNumber() {
   const t = Date.now().toString(36).toUpperCase();
@@ -36,17 +46,54 @@ function moneyLine(cents, currency = "AUD") {
   }
 }
 
+/** Normalize any ObjectId-shaped value to the same 24-hex string for comparisons. */
+function canonicalVendorId(raw) {
+  if (raw == null || raw === "") return "";
+  try {
+    const s = typeof raw === "object" && raw?.toString ? raw.toString() : String(raw).trim();
+    if (!mongoose.Types.ObjectId.isValid(s)) return s;
+    return new mongoose.Types.ObjectId(s).toString();
+  } catch {
+    return String(raw || "").trim();
+  }
+}
+
 function listingOwnerId(it) {
-  const v = it?.vendorId;
-  if (v == null) return "";
-  if (typeof v === "object" && v.toString) return String(v.toString());
-  return String(v);
+  return canonicalVendorId(it?.vendorId);
+}
+
+/** Ensures vendorId on each line matches Listing.vendor (fixes stale/missing ids). */
+async function enrichOrderItemsWithListingVendors(orderItems) {
+  const rawIds = [...new Set((orderItems || []).map((it) => it.listing).filter(Boolean))];
+  const listingIds = rawIds.filter((id) => mongoose.Types.ObjectId.isValid(String(id))).map((id) => new mongoose.Types.ObjectId(id));
+  if (listingIds.length === 0) return orderItems || [];
+
+  const listings = await Listing.find({ _id: { $in: listingIds } }).select("_id vendor").lean();
+  const vendorByListing = new Map(listings.map((l) => [String(l._id), l.vendor]));
+
+  return (orderItems || []).map((it) => {
+    const lid = it.listing != null ? String(it.listing) : "";
+    const fromListing = lid ? vendorByListing.get(lid) : undefined;
+    const merged = fromListing !== undefined && fromListing != null ? fromListing : it.vendorId;
+    return { ...it, vendorId: merged };
+  });
+}
+
+function looksLikeEmail(s) {
+  const t = String(s || "").trim();
+  return t.includes("@") && !/\s/.test(t) && t.length > 3;
+}
+
+/** Prefer order-email inbox: profile contact first, then login (deduped). */
+function vendorRecipientEmails(loginEmail, profileEmail) {
+  const list = [profileEmail, loginEmail].map((e) => String(e || "").trim()).filter(looksLikeEmail);
+  return [...new Set(list.map((e) => e.toLowerCase()))];
 }
 
 /**
  * Notify vendors by email when a *new* order is placed (order creation only — not status updates).
  * Each seller gets one email: their line items (with prices), customer contact + shipping, order ID.
- * Uses User.email, or VendorProfile.contactEmail when login email is empty.
+ * Sends to VendorProfile.contactEmail (if set) and User.login email when both differ.
  */
 async function sendVendorNewOrderEmails({
   orderNumber,
@@ -58,6 +105,7 @@ async function sendVendorNewOrderEmails({
 }) {
   const idStrs = [...new Set((orderItems || []).map((it) => listingOwnerId(it)).filter(Boolean))];
   const vendorObjectIds = idStrs.filter((id) => mongoose.Types.ObjectId.isValid(id)).map((id) => new mongoose.Types.ObjectId(id));
+  console.log("[orders] Vendor notify: distinct vendor ids", idStrs.length, "order", orderNumber);
   if (vendorObjectIds.length === 0) {
     console.warn("[orders] New order: no vendor ids on line items; skipping vendor notify");
     return;
@@ -69,8 +117,14 @@ async function sendVendorNewOrderEmails({
     return;
   }
 
+  const foundVendorIds = new Set(users.map((u) => canonicalVendorId(u._id)));
+  const missingUsers = vendorObjectIds.filter((oid) => !foundVendorIds.has(canonicalVendorId(oid)));
+  if (missingUsers.length) {
+    console.warn("[orders] New order: listings reference vendor user ids with no User row:", missingUsers.map(String));
+  }
+
   const profiles = await VendorProfile.find({ user: { $in: vendorObjectIds } }).select("user contactEmail").lean();
-  const contactByUser = new Map(profiles.map((p) => [String(p.user), String(p.contactEmail || "").trim()]));
+  const contactByUser = new Map(profiles.map((p) => [canonicalVendorId(p.user), String(p.contactEmail || "").trim().toLowerCase()]));
 
   const displayCustomer = String(customerName || "").trim() || "Customer";
   const displayEmail = String(customerEmail || "").trim();
@@ -89,12 +143,19 @@ async function sendVendorNewOrderEmails({
   const safeAddress = escapeHtml(addressBlock);
 
   for (const v of users) {
-    const vid = String(v._id);
+    const vid = canonicalVendorId(v._id);
     const loginEmail = String(v.email || "").trim();
     const profileEmail = contactByUser.get(vid) || "";
-    const to = loginEmail || profileEmail;
-    if (!to) {
-      console.warn("[orders] New order: vendor has no User.email and no VendorProfile.contactEmail", vid);
+    const recipients = vendorRecipientEmails(loginEmail, profileEmail);
+    if (recipients.length === 0) {
+      console.warn(
+        "[orders] New order: no valid vendor email (set User.email or VendorProfile.contactEmail). userId=",
+        vid,
+        "raw login=",
+        loginEmail || "(empty)",
+        "profile=",
+        profileEmail || "(empty)"
+      );
       continue;
     }
     if (v.role !== "vendor") {
@@ -102,6 +163,10 @@ async function sendVendorNewOrderEmails({
     }
 
     const myItems = (orderItems || []).filter((it) => listingOwnerId(it) === vid);
+    if (myItems.length === 0) {
+      console.warn("[orders] New order: vendor user", vid, "has no matching line items (vendorId mismatch). Skipping email.");
+      continue;
+    }
     const vendorSubtotalCents = myItems.reduce((s, i) => s + (Number(i.priceCents) || 0) * (Math.max(1, Number(i.quantity) || 1)), 0);
     const primaryCurrency = myItems[0]?.currency || "AUD";
 
@@ -167,16 +232,19 @@ The customer has already completed checkout for the full order. Coordinate shipp
         <p style="color:#6b7280;font-size:13px;">This email is sent when a new order is placed. The order may include items from other sellers; only your lines are listed above.</p>
       `;
 
-    try {
-      const sent = await sendMail({
-        to,
-        subject: `New order ${orderNumber} — ${displayCustomer} — action needed`,
-        text,
-        html,
-      });
-      if (!sent) console.warn("[orders] New order vendor email not sent (mail unavailable):", to);
-    } catch (e) {
-      console.warn("[orders] Vendor new-order email failed:", to, e?.message || e);
+    for (const to of recipients) {
+      try {
+        const sent = await sendMail({
+          to,
+          subject: `New order ${orderNumber} — ${displayCustomer} — action needed`,
+          text,
+          html,
+        });
+        if (!sent) console.warn("[orders] New order vendor email not sent (no SMTP / send failed):", to);
+        else console.log("[orders] Vendor new-order email queued/sent:", to, "order", orderNumber);
+      } catch (e) {
+        console.warn("[orders] Vendor new-order email failed:", to, e?.message || e);
+      }
     }
   }
 }
@@ -185,34 +253,19 @@ The customer has already completed checkout for the full order. Coordinate shipp
 async function computeCouponDiscount(code, orderItems) {
   const codeStr = String(code || "").trim().toUpperCase();
   if (!codeStr) return { discountCents: 0 };
-  const now = new Date();
-  const promo = await Promotion.findOne({
-    code: codeStr,
-    active: true,
-    startDate: { $lte: now },
-    endDate: { $gte: now },
-  }).lean();
+  const promo = await findLiveCouponPromotion(codeStr);
   if (!promo) return { discountCents: 0, error: "Invalid or expired code" };
 
-  const vendorStr = promo.vendor.toString();
-  let applicableSubtotalCents = 0;
-  for (const row of orderItems) {
-    const lid = (row.listing && row.listing.toString) ? row.listing.toString() : String(row.listing || "");
-    if (!lid) continue;
-    const rowVendor = row.vendorId && row.vendorId.toString ? row.vendorId.toString() : "";
-    if (rowVendor !== vendorStr) continue;
-    const inScope = !promo.listingIds || promo.listingIds.length === 0 || promo.listingIds.some((id) => id.toString() === lid);
-    if (!inScope) continue;
-    applicableSubtotalCents += (Number(row.priceCents) || 0) * (Math.max(1, Math.floor(Number(row.quantity)) || 1));
-  }
-  if (applicableSubtotalCents < (promo.minPurchaseCents || 0))
-    return { discountCents: 0, error: "Minimum purchase not met" };
+  const listingIds = orderItems.map((r) => r.listing).filter((id) => mongoose.Types.ObjectId.isValid(id));
+  const listings = await Listing.find({ _id: { $in: listingIds } })
+    .select("_id vendor pricing.priceCents")
+    .lean();
+  const listingMap = Object.fromEntries(listings.map((l) => [l._id.toString(), l]));
 
-  let discountCents = promo.type === "percentage"
-    ? Math.round((applicableSubtotalCents * promo.value) / 100)
-    : Math.min(promo.value, applicableSubtotalCents);
-  discountCents = Math.max(0, discountCents);
-  return { discountCents };
+  const result = computeCartDiscountForPromo(promo, orderItems, listingMap);
+  if (result.error) return { discountCents: 0, error: result.error };
+  if (result.discountCents <= 0) return { discountCents: 0, error: "Code does not apply to cart items" };
+  return { discountCents: result.discountCents };
 }
 
 // POST /api/orders — create order (from cart payload), require auth
@@ -238,22 +291,6 @@ router.post(
         const shipping = b.shipping || {};
         return typeof shipping.postcode === "string" && shipping.postcode.trim() ? null : "shipping.postcode is required";
       },
-      (b = {}) => {
-        const p = b.payment || {};
-        return typeof p.cardName === "string" && p.cardName.trim() ? null : "payment.cardName is required";
-      },
-      (b = {}) => {
-        const p = b.payment || {};
-        return typeof p.cardNumber === "string" && p.cardNumber.trim() ? null : "payment.cardNumber is required";
-      },
-      (b = {}) => {
-        const p = b.payment || {};
-        return typeof p.expiry === "string" && p.expiry.trim() ? null : "payment.expiry is required";
-      },
-      (b = {}) => {
-        const p = b.payment || {};
-        return typeof p.cvc === "string" && p.cvc.trim() ? null : "payment.cvc is required";
-      },
     ],
   }),
   async (req, res, next) => {
@@ -272,20 +309,35 @@ router.post(
       return res.status(400).json({ ok: false, message: "Cart is empty" });
     }
 
+    const deliveryMethod = shipping.deliveryMethod === "express" ? "express" : "standard";
+    const shippingCents = SHIPPING_RATES_CENTS[deliveryMethod];
+    const paymentPayload = { ...payment, method: String(payment.method || "card").toLowerCase() };
+
     let subtotalCents = 0;
     const orderItems = [];
     for (const row of items) {
       const listingId = row.listingId || row.listing;
       const qty = Math.max(1, Math.floor(Number(row.quantity)) || 1);
       if (!listingId) continue;
-      const listing = await Listing.findById(listingId).lean();
+      let listing = await Listing.findById(listingId).lean();
       if (!listing || listing.inventory?.status !== "active") {
         return res.status(400).json({ ok: false, message: `Product no longer available: ${row.title || listingId}` });
       }
+      const stockQty = Math.max(0, Number(listing.inventory?.stockQty) || 0);
+      if (stockQty < qty) {
+        return res.status(400).json({
+          ok: false,
+          message: `Not enough stock for "${listing.title || row.title || "item"}" (only ${stockQty} available)`,
+        });
+      }
+      const promos = await loadLiveAutoPromos({ vendorIds: [listing.vendor] });
+      const promo = bestAutoPromoForListing(listing, promos);
+      listing = applyAutoPromoToListing(listing, promo);
       const priceCents = Number(listing.pricing?.priceCents) || 0;
       if (priceCents <= 0) continue;
       orderItems.push({
         listing: listing._id,
+        listingId: listing._id,
         vendorId: listing.vendor,
         title: listing.title || row.title || "Item",
         slug: listing.seo?.slug || "",
@@ -308,11 +360,11 @@ router.post(
       discountCents = Math.min(result.discountCents, subtotalCents);
     }
 
-    const totalCents = Math.max(0, subtotalCents - discountCents);
+    const totalCents = Math.max(0, subtotalCents - discountCents + shippingCents);
     const paymentAttempt = await chargePayment({
       amountCents: totalCents,
       currency: orderItems[0]?.currency || "AUD",
-      payment,
+      payment: paymentPayload,
     });
     if (!paymentAttempt.ok) {
       await PaymentTransaction.create({
@@ -329,11 +381,13 @@ router.post(
     }
 
     const orderNumber = getOrderNumber();
-    const estimatedDelivery = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const estimatedDelivery = new Date(
+      Date.now() + (DELIVERY_DAYS[deliveryMethod] || 7) * 24 * 60 * 60 * 1000
+    );
 
     const itemsToSave = orderItems.map(({ vendorId: _v, ...rest }) => rest);
 
-    const order = await Order.create({
+    const orderPayload = {
       orderNumber,
       customer: customerId,
       items: itemsToSave,
@@ -352,11 +406,34 @@ router.post(
         postcode: shipping.postcode || "",
         country: shipping.country || "AU",
         phone: shipping.phone || "",
+        deliveryMethod,
       },
+      shippingCents,
+      paymentMethod: paymentPayload.method || "card",
       estimatedDelivery,
       notes: shipping.notes || "",
       statusHistory: [{ from: "", to: "new", actorRole: "system", note: "Order placed" }],
-    });
+    };
+
+    let order;
+    try {
+      order = await createOrderWithStockReservation(orderPayload, itemsToSave);
+    } catch (stockErr) {
+      const msg = stockErr?.message || "Could not reserve stock";
+      if (paymentAttempt?.ok) {
+        await PaymentTransaction.create({
+          order: null,
+          customer: customerId,
+          amountCents: totalCents,
+          currency: orderItems[0]?.currency || "AUD",
+          status: "failed",
+          gatewayReference: paymentAttempt?.data?.gatewayReference || "",
+          refundStatus: "requested",
+          refundReason: `Stock reservation failed after payment: ${msg}`,
+        }).catch(() => null);
+      }
+      return res.status(409).json({ ok: false, message: msg });
+    }
 
     const populated = await Order.findById(order._id).populate("customer", "email firstName lastName").lean();
     const cust = populated?.customer;
@@ -406,12 +483,23 @@ router.post(
 
     // Send "new order" notifications to involved vendors
     try {
+      const shippingSnapshot = {
+        fullName: shipping.fullName || "",
+        line1: shipping.line1 || "",
+        line2: shipping.line2 || "",
+        city: shipping.city || "",
+        state: shipping.state || "",
+        postcode: shipping.postcode || "",
+        country: shipping.country || "AU",
+        phone: shipping.phone || "",
+      };
+      const orderItemsForMail = await enrichOrderItemsWithListingVendors(orderItems);
       await sendVendorNewOrderEmails({
         orderNumber,
-        orderItems,
+        orderItems: orderItemsForMail,
         customerName,
         customerEmail: populated?.customer?.email || req.user?.email || "",
-        shipping: order.shipping || {},
+        shipping: shippingSnapshot,
         estimatedDelivery: order.estimatedDelivery,
       });
     } catch (e) {

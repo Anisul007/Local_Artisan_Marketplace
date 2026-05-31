@@ -69,16 +69,16 @@ export default function AdminCustomersPage() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl border border-white/15 bg-slate-900/70 p-5 shadow-xl shadow-black/25">
-        <h1 className="text-xl font-bold text-white">Customer Management</h1>
+      <div className="admin-card">
+        <h1 className="admin-card-title">Customer Management</h1>
         <div className="mt-3 grid gap-2 md:grid-cols-3">
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer..." className="h-10 rounded-lg border border-white/20 bg-white/5 px-3 text-sm text-slate-100 placeholder:text-slate-400" />
-          <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-10 rounded-lg border border-white/20 bg-white/5 px-3 text-sm text-slate-100">
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search customer..." className="admin-input" />
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="admin-select">
             <option value="">All statuses</option>
             <option value="active">Active</option>
             <option value="blocked">Blocked</option>
           </select>
-          <select value={attention} onChange={(e) => setAttention(e.target.value)} className="h-10 rounded-lg border border-white/20 bg-white/5 px-3 text-sm text-slate-100">
+          <select value={attention} onChange={(e) => setAttention(e.target.value)} className="admin-select">
             <option value="">All customers</option>
             <option value="unverified">Needs email verification only</option>
           </select>
@@ -91,39 +91,39 @@ export default function AdminCustomersPage() {
               <div
                 key={c._id}
                 className={`flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm ${
-                  needsEmail ? "border-l-4 border-l-rose-500 border-y border-r border-white/15 bg-rose-500/[0.06]" : "border border-white/15 bg-white/[0.03]"
+                  needsEmail ? "border-l-4 border-l-rose-500 border-y border-r border-gray-200 bg-rose-500/[0.06]" : "border border-gray-200 bg-gray-50"
                 }`}
               >
-                <Link to={`/admin/users/${c._id}`} className="min-w-0 flex-1 rounded-lg outline-none ring-cyan-400/40 transition hover:bg-white/[0.04] focus-visible:ring-2">
+                <Link to={`/admin/users/${c._id}`} className="min-w-0 flex-1 rounded-lg outline-none ring-[#4b0082]/30 transition hover:bg-gray-50 focus-visible:ring-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-white">
+                    <span className="font-semibold text-gray-900">
                       {c.firstName} {c.lastName}
                     </span>
                     {needsEmail && (
                       <span className="shrink-0 rounded-full bg-rose-600/90 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">Email not verified</span>
                     )}
                   </div>
-                  <div className="text-xs text-slate-400">{c.email}</div>
-                  <div className="text-xs text-slate-400">
+                  <div className="text-xs text-gray-500">{c.email}</div>
+                  <div className="text-xs text-gray-500">
                     Orders: {c.ordersCount || 0} · Spent: {money(c.spentCents || 0)} · {c.suspicious ? "Suspicious user" : "Normal"}
                   </div>
-                  <div className="text-[11px] text-cyan-300/90">View full admin profile →</div>
+                  <div className="text-[11px] text-[#4b0082] font-medium">View full profile →</div>
                 </Link>
                 <div className="flex flex-wrap items-center gap-2">
-                  <button type="button" onClick={() => openOrders(c._id)} className="rounded-lg border border-white/25 bg-white/5 px-2 py-1 text-xs font-semibold text-slate-100">
+                  <button type="button" onClick={() => openOrders(c._id)} className="admin-btn admin-btn-sm admin-btn-outline">
                     Quick order history
                   </button>
                   <button
                     type="button"
                     onClick={() => toggleBlock(c)}
-                    className={`rounded-lg px-2 py-1 text-xs font-semibold text-white ${c.isActive ? "bg-rose-600" : "bg-emerald-600"}`}
+                    className={`admin-btn admin-btn-sm ${c.isActive ? "admin-btn-danger" : "admin-btn-success"}`}
                   >
                     {c.isActive ? "Block" : "Unblock"}
                   </button>
                   <button
                     type="button"
                     onClick={() => removeCustomer(c)}
-                    className="rounded-lg border border-red-400/50 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-200 hover:bg-red-500/20"
+                    className="admin-btn admin-btn-sm admin-btn-ghost-danger"
                   >
                     Delete
                   </button>
@@ -131,23 +131,23 @@ export default function AdminCustomersPage() {
               </div>
             );
           })}
-          {items.length === 0 && <p className="text-sm text-slate-400">No customers found.</p>}
+          {items.length === 0 && <p className="admin-muted">No customers found.</p>}
         </div>
       </div>
 
       {selected && (
-        <div className="rounded-2xl border border-white/15 bg-slate-900/70 p-5 shadow-xl shadow-black/25">
-          <h2 className="text-lg font-semibold text-white">Customer Order History</h2>
+        <div className="admin-card">
+          <h2 className="text-lg font-semibold text-gray-900">Customer Order History</h2>
           <div className="mt-3 space-y-2 text-sm">
             {orders.map((o) => (
-              <div key={o._id} className="rounded-lg border border-white/15 bg-white/[0.03] px-3 py-2">
-                <div className="font-semibold text-white">{o.orderNumber}</div>
-                <div className="text-xs text-slate-400">
+              <div key={o._id} className="admin-row px-3 py-2">
+                <div className="font-semibold text-gray-900">{o.orderNumber}</div>
+                <div className="text-xs text-gray-500">
                   {o.status} · {o.createdAt ? new Date(o.createdAt).toLocaleString() : "—"} · {money(o.totalCents)}
                 </div>
               </div>
             ))}
-            {orders.length === 0 && <p className="text-sm text-slate-400">No orders for this customer.</p>}
+            {orders.length === 0 && <p className="admin-muted">No orders for this customer.</p>}
           </div>
         </div>
       )}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Reveal from "../ui/Reveal";
-import { PublicListingsAPI } from "../../lib/api";
+import { loadFeaturedVendors } from "../../lib/featuredVendors";
 
 const PLACEHOLDER = "/images/placeholder.svg";
 
@@ -10,27 +10,16 @@ export default function Makers() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // We don't have a dedicated public vendors endpoint, so derive brands from public listings.
-    // This keeps the home page in sync with Shop Handmade products.
-    PublicListingsAPI.browse({ page: 1, sort: "newest" })
-      .then((res) => {
-        const data = res?.data?.data ?? res?.data ?? {};
-        const raw = Array.isArray(data?.items) ? data.items : [];
-        const map = new Map();
-        for (const p of raw) {
-          const v = p?.vendor;
-          const id = v?._id || v?.id;
-          const name = v?.businessName || v?.displayName || v?.name;
-          if (!id || !name) continue;
-          if (map.has(String(id))) continue;
-          map.set(String(id), {
-            id: String(id),
-            title: name,
-            img: v?.logoUrl || v?.avatarUrl || "",
-          });
-        }
-        setVendors(Array.from(map.values()).slice(0, 4));
-      })
+    loadFeaturedVendors(4)
+      .then((items) =>
+        setVendors(
+          items.map((v) => ({
+            id: v.id,
+            title: v.businessName || "Vendor",
+            img: v.logoUrl || "",
+          }))
+        )
+      )
       .catch(() => setVendors([]))
       .finally(() => setLoading(false));
   }, []);
@@ -64,7 +53,7 @@ export default function Makers() {
               ))
             : cards.map((m, i) => (
                 <Reveal key={m.id || m.title} delay={i * 0.05}>
-                  <Link to={`/makers/${m.id}`} className="block border rounded-2xl overflow-hidden hover:shadow-lg transition">
+                  <Link to={`/makers/${m.id}?tab=about`} className="block border rounded-2xl overflow-hidden hover:shadow-lg transition">
                     <div className="aspect-[16/9] bg-gray-100">
                       <img
                         src={m.img || PLACEHOLDER}

@@ -26,42 +26,38 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <main className="min-h-[80vh] grid place-items-center bg-slate-950 px-4">
-      <form onSubmit={submit} className="w-full max-w-md rounded-2xl border border-white/15 bg-slate-900/70 p-8 shadow-2xl shadow-black/35 backdrop-blur-xl">
-        <h1 className="text-2xl font-bold text-white">Admin Login</h1>
-        <p className="mt-1 text-sm text-slate-300">Separate secure access for platform administrators.</p>
+    <main className="admin-app admin-shell grid min-h-screen place-items-center px-4">
+      <form onSubmit={submit} className="admin-card w-full max-w-md p-8 shadow-lg">
+        <p className="admin-brand-tag">Artisan Avenue</p>
+        <h1 className="mt-2 text-2xl font-bold text-gray-900">Admin login</h1>
+        <p className="mt-1 admin-muted">Secure access for platform administrators.</p>
         {err && <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{err}</div>}
-        <label className="mt-4 block text-sm font-semibold text-slate-200">
+        <label className="mt-4 block text-sm font-semibold text-gray-700">
           Admin email
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             type="email"
-            className="mt-1 h-11 w-full rounded-xl border border-white/20 bg-white/5 px-3 text-slate-100"
+            className="admin-input mt-1 h-11"
             required
           />
         </label>
-        <label className="mt-3 block text-sm font-semibold text-slate-200">
+        <label className="mt-3 block text-sm font-semibold text-gray-700">
           Password
           <input
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             type="password"
-            className="mt-1 h-11 w-full rounded-xl border border-white/20 bg-white/5 px-3 text-slate-100"
+            className="admin-input mt-1 h-11"
             required
           />
         </label>
-        <button
-          type="submit"
-          disabled={loading}
-          className="mt-5 h-11 w-full rounded-xl bg-indigo-600 font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
-        >
-          {loading ? "Signing in..." : "Login as Admin"}
+        <button type="submit" disabled={loading} className="admin-btn-primary mt-5 h-11 w-full">
+          {loading ? "Signing in..." : "Login as admin"}
         </button>
-        <p className="mt-4 text-center text-sm text-slate-400">
-          Looking for user login?{" "}
-          <Link to="/login" className="font-semibold text-slate-200 underline">
-            Go to user login
+        <p className="mt-4 text-center text-sm text-gray-500">
+          <Link to="/" className="font-semibold text-[#4b0082] hover:underline">
+            Back to storefront
           </Link>
         </p>
       </form>

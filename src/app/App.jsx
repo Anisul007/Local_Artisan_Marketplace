@@ -30,7 +30,9 @@ const MyOrders = lazy(() => import("../pages/public/MyOrders.jsx"));
 
 // -------- Customer account --------
 const CustomerDashboard = lazy(() => import("../pages/customer/CustomerDashboard.jsx"));
+const CustomerNotificationsPage = lazy(() => import("../pages/customer/CustomerNotificationsPage.jsx"));
 const CustomerProfilePage = lazy(() => import("../pages/customer/CustomerProfilePage.jsx"));
+const ReportAbusePage = lazy(() => import("../pages/customer/ReportAbusePage.jsx"));
 
 // -------- Vendor pages --------
 const VendorDashboardBackoffice = lazy(() => import("../pages/vendor/VendorDashboardBackoffice.jsx"));
@@ -39,11 +41,14 @@ const ListingEditorPage = lazy(() => import("../pages/vendor/ListingEditorPage.j
 const ListingPreviewPage = lazy(() => import("../pages/vendor/ListingPreviewPage.jsx"));
 const VendorReviewsPage = lazy(() => import("../pages/vendor/VendorReviewsPage.jsx"));
 const VendorProfilePage = lazy(() => import("../pages/vendor/VendorProfilePage.jsx"));
+const VendorReportAbusePage = lazy(() => import("../pages/vendor/VendorReportAbusePage.jsx"));
 const OrdersPage = lazy(() => import("../pages/vendor/OrdersPage.jsx"));
 const InventoryPage = lazy(() => import("../pages/vendor/InventoryPage.jsx"));
 const PromotionsPage = lazy(() => import("../pages/vendor/PromotionsPage.jsx"));
 const SalesInsightsPage = lazy(() => import("../pages/vendor/SalesInsightsPage.jsx"));
+const VendorNotificationsPage = lazy(() => import("../pages/vendor/VendorNotificationsPage.jsx"));
 const AdminDashboardPage = lazy(() => import("../pages/admin/AdminDashboardPage.jsx"));
+const AdminAnalyticsDetailPage = lazy(() => import("../pages/admin/AdminAnalyticsDetailPage.jsx"));
 const AdminProfilePage = lazy(() => import("../pages/admin/AdminProfilePage.jsx"));
 const AdminLoginPage = lazy(() => import("../pages/admin/AdminLoginPage.jsx"));
 const AdminListingsModerationPage = lazy(() => import("../pages/admin/AdminListingsModerationPage.jsx"));
@@ -89,7 +94,9 @@ export default function App() {
             <Route path="/checkout" element={<Checkout />} />
             <Route path="/orders" element={<MyOrders />} />
             <Route path="/account" element={<CustomerDashboard />} />
+            <Route path="/account/notifications" element={<CustomerNotificationsPage />} />
             <Route path="/account/profile" element={<CustomerProfilePage />} />
+            <Route path="/account/report-abuse" element={<ReportAbusePage />} />
             <Route path="/orders/:orderId/success" element={<OrderSuccess />} />
             <Route path="/for-vendors" element={<ForVendorsPage />} />
             <Route path="/contact" element={<Contact />} />
@@ -110,12 +117,14 @@ export default function App() {
           >
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<VendorDashboardBackoffice />} />
+            <Route path="notifications" element={<VendorNotificationsPage />} />
             <Route path="listings" element={<VendorListingsPage />} />
             <Route path="listings/new" element={<ListingEditorPage isNew />} />
             <Route path="listings/:id/edit" element={<ListingEditorPage />} />
             <Route path="listings/:id/preview" element={<ListingPreviewPage />} />
             <Route path="reviews" element={<VendorReviewsPage />} />
             <Route path="profile" element={<VendorProfilePage />} />
+            <Route path="report-abuse" element={<VendorReportAbusePage />} />
             <Route path="orders" element={<OrdersPage />} />
             <Route path="inventory" element={<InventoryPage />} />
             <Route path="promotions" element={<PromotionsPage />} />
@@ -132,6 +141,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="dashboard" replace />} />
             <Route path="dashboard" element={<AdminDashboardPage />} />
+            <Route path="analytics/:metric" element={<AdminAnalyticsDetailPage />} />
             <Route path="profile" element={<AdminProfilePage />} />
             <Route path="listings" element={<AdminListingsModerationPage />} />
             <Route path="vendors" element={<AdminVendorsPage />} />

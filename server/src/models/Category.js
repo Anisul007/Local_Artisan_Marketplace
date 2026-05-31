@@ -13,7 +13,6 @@ const CategorySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-CategorySchema.index({ slug: 1 }, { unique: true });
 CategorySchema.index({ parent: 1 });
 CategorySchema.index({ path: 1 });
 

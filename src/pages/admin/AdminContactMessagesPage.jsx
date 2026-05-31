@@ -42,28 +42,28 @@ export default function AdminContactMessagesPage() {
   }
 
   return (
-    <div className="rounded-2xl border border-white/15 bg-slate-900/70 p-5 shadow-xl shadow-black/25">
+    <div className="admin-card">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-xl font-bold text-white">Contact Messages</h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-400">
-            These are submissions from the public <strong className="text-slate-300">Contact Us</strong> page only. Messages between a vendor and customer on an order appear under{" "}
-            <strong className="text-slate-300">Orders</strong>, then expand an order and open &quot;View messages and details&quot;.
+          <h1 className="admin-card-title">Contact Messages</h1>
+          <p className="mt-1 max-w-2xl admin-muted">
+            These are submissions from the public <strong className="text-gray-800">Contact Us</strong> page only. Messages between a vendor and customer on an order appear under{" "}
+            <strong className="text-gray-800">Orders</strong> — open an order to read messages there.
           </p>
         </div>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-10 rounded-lg border border-white/20 bg-white/5 px-3 text-sm text-slate-100">
+        <select value={status} onChange={(e) => setStatus(e.target.value)} className="admin-select min-w-[10rem]">
           <option value="">All</option>
           <option value="new">New</option>
           <option value="resolved">Resolved</option>
         </select>
       </div>
-      <p className="mt-2 text-sm text-slate-400">
-        Messages still marked <strong className="text-slate-200">new</strong> are what the sidebar badge counts; they are highlighted in the list.
+      <p className="mt-2 admin-muted">
+        Messages still marked <strong className="text-gray-700">new</strong> are what the sidebar badge counts; they are highlighted in the list.
       </p>
       {(notifyNew ?? 0) > 0 && status !== "new" && (
-        <div className="mt-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-100">
+        <div className="admin-alert-warn mt-3">
           <span className="font-semibold">{notifyNew}</span> new message{notifyNew === 1 ? "" : "s"}.{" "}
-          <button type="button" className="underline decoration-rose-200/80 hover:text-white" onClick={() => setStatus("new")}>
+          <button type="button" className="font-semibold text-[#4b0082] underline hover:text-[#ff6600]" onClick={() => setStatus("new")}>
             Show new only
           </button>
         </div>
@@ -72,39 +72,39 @@ export default function AdminContactMessagesPage() {
       {err && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{err}</div>}
       <div className="mt-4 space-y-3">
         {items.length === 0 ? (
-          <p className="text-sm text-slate-400">No contact messages.</p>
+          <p className="admin-muted">No contact messages.</p>
         ) : (
           items.map((m) => (
             <div
               key={m._id}
               className={`rounded-xl border p-3 ${
                 m.status === "new"
-                  ? "border-l-4 border-l-rose-500 border-y border-r border-white/15 bg-rose-500/[0.06]"
-                  : "border border-white/15 bg-white/[0.03]"
+                  ? "border-l-4 border-l-rose-500 border-y border-r border-gray-200 bg-rose-500/[0.06]"
+                  : "border border-gray-200 bg-gray-50"
               }`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-2">
                   {m.status === "new" && (
-                    <span className="rounded-full bg-rose-600/90 px-2 py-0.5 text-[10px] font-bold uppercase text-white">New</span>
+                    <span className="admin-badge-new text-[10px]">New</span>
                   )}
-                  <div className="font-semibold text-white">
+                  <div className="font-semibold text-gray-900">
                     {m.name} · {m.email}
                   </div>
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${m.status === "resolved" ? "bg-emerald-500/20 text-emerald-300" : "bg-amber-500/20 text-amber-300"}`}>
+                <span className={`text-xs font-semibold ${m.status === "resolved" ? "admin-badge-ok normal-case" : "admin-badge-pending normal-case"}`}>
                   {m.status}
                 </span>
               </div>
-              <p className="mt-2 text-sm text-slate-300">{m.message}</p>
+              <p className="mt-2 text-sm text-gray-600">{m.message}</p>
               <textarea
                 value={response[m._id] || ""}
                 onChange={(e) => setResponse((p) => ({ ...p, [m._id]: e.target.value }))}
                 rows={2}
                 placeholder="Type your response..."
-                className="mt-2 w-full rounded-lg border border-white/20 bg-white/5 p-2 text-sm text-slate-100 placeholder:text-slate-400"
+                className="admin-textarea mt-2"
               />
-              <button onClick={() => reply(m._id)} className="mt-2 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">
+              <button onClick={() => reply(m._id)} className="mt-2 admin-btn admin-btn-sm admin-btn-brand">
                 Send response + Resolve
               </button>
             </div>

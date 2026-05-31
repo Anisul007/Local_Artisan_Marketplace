@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Star, Heart, ShoppingCart, ArrowLeft, Store, Globe, Check, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Star, Heart, ShoppingCart, ArrowLeft, Store, Globe, Check, X, ChevronLeft, ChevronRight, ShieldAlert } from "lucide-react";
 import { PublicListingsAPI, CustomerReviewsAPI } from "../../lib/api";
-import { useCart } from "../../context/CartContext";
+import { useCart, isAtStockLimit, isOutOfStock } from "../../context/CartContext";
 import { useAuth } from "../../context/AuthContext";
 import { useWishlist } from "../../context/WishlistContext";
 
@@ -24,6 +24,7 @@ export default function Product() {
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState("");
   const [reviewError, setReviewError] = useState("");
+  const [reviewEligibility, setReviewEligibility] = useState(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const lightboxScrollRef = useRef(null);
@@ -50,6 +51,20 @@ export default function Product() {
       })
       .catch(() => {});
   }, [item?._id]);
+
+  useEffect(() => {
+    if (!item?._id || !user || user.role === "vendor") {
+      setReviewEligibility(null);
+      return;
+    }
+    CustomerReviewsAPI.eligibility(item._id)
+      .then((r) => {
+        const data = r?.data?.data ?? r?.data;
+        if (r?.ok && data) setReviewEligibility(data);
+        else setReviewEligibility({ canReview: false, hasReviewed: false, reason: "unknown" });
+      })
+      .catch(() => setReviewEligibility({ canReview: false, hasReviewed: false, reason: "unknown" }));
+  }, [item?._id, user]);
 
   const images = useMemo(() => {
     if (!item) return [];
@@ -140,6 +155,10 @@ export default function Product() {
     : null;
   const cartQty = Number(cartEntry?.quantity || 0);
   const inCart = cartQty > 0;
+  const stockQty = Math.max(0, Number(item?.inventory?.stockQty) || 0);
+  const outOfStock = isOutOfStock(stockQty);
+  const atMaxInCart = isAtStockLimit(cartEntry, stockQty);
+  const cannotAddMore = purchaseBlocked || outOfStock || atMaxInCart;
 
   async function handleSubmitReview(e) {
     e.preventDefault();
@@ -148,13 +167,15 @@ export default function Product() {
     try {
       const r = await CustomerReviewsAPI.create({
         productId: item._id,
-        listingId: item._id,
+        listingId: String(item._id),
         rating: reviewRating,
         comment: reviewComment.trim(),
       });
       if (r?.ok) {
         setReviewComment("");
         setReviewRating(5);
+        setReviewEligibility({ canReview: false, hasReviewed: true, reason: "already_reviewed" });
+        window.dispatchEvent(new Event("customer-notifications-changed"));
         const listRes = await CustomerReviewsAPI.list(item._id);
         const listData = listRes?.data?.data ?? listRes?.data;
         if (listRes?.ok && Array.isArray(listData?.items)) setReviews(listData.items);
@@ -281,6 +302,18 @@ export default function Product() {
                     <Globe className="w-3.5 h-3.5" /> Visit shop
                   </a>
                 )}
+                {user?.role !== "vendor" && (
+                  <Link
+                    to={
+                      user
+                        ? `/account/report-abuse?targetType=listing&targetId=${item._id}&targetLabel=${encodeURIComponent(item.title || "Listing")}`
+                        : `/login?next=${encodeURIComponent(`/account/report-abuse?targetType=listing&targetId=${item._id}&targetLabel=${encodeURIComponent(item.title || "Listing")}`)}`
+                    }
+                    className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-rose-700 hover:underline"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5" /> Report this listing
+                  </Link>
+                )}
               </div>
             </div>
 
@@ -303,10 +336,18 @@ export default function Product() {
             <div className="flex flex-wrap gap-3 mb-8">
               <button
                 type="button"
-                disabled={purchaseBlocked}
-                title={purchaseBlocked ? vendorPurchaseMessage : undefined}
-                className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-white transition ${
+                disabled={cannotAddMore}
+                title={
                   purchaseBlocked
+                    ? vendorPurchaseMessage
+                    : outOfStock
+                      ? "Out of stock"
+                      : atMaxInCart
+                        ? `Only ${stockQty} available — already in your cart`
+                        : undefined
+                }
+                className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl font-semibold text-white transition ${
+                  cannotAddMore
                     ? "cursor-not-allowed bg-gray-400"
                     : inCart
                       ? "bg-emerald-600 hover:bg-emerald-700"
@@ -314,18 +355,27 @@ export default function Product() {
                 }`}
                 onClick={() =>
                   addItem({
-                    listingId: item._id,
+                    listingId: String(item._id),
                     slug: item.seo?.slug,
                     title: item.title,
                     priceCents: item.pricing?.priceCents || 0,
                     quantity: 1,
+                    stockQty,
                     imageUrl: currentImage?.url || item.images?.[0]?.url || "",
                     currency: item.pricing?.currency || "AUD",
                   })
                 }
               >
                 {inCart ? <Check className="w-5 h-5" /> : <ShoppingCart className="w-5 h-5" />}
-                {purchaseBlocked ? "Purchasing unavailable" : inCart ? `Added to cart${cartQty > 1 ? ` (${cartQty})` : ""}` : "Add to cart"}
+                {purchaseBlocked
+                  ? "Purchasing unavailable"
+                  : outOfStock
+                    ? "Out of stock"
+                    : atMaxInCart
+                      ? `Max in cart (${cartQty}/${stockQty})`
+                      : inCart
+                        ? `Added to cart${cartQty > 1 ? ` (${cartQty})` : ""}`
+                        : "Add to cart"}
               </button>
               <button
                 type="button"
@@ -333,7 +383,7 @@ export default function Product() {
                 aria-label="Wishlist"
                 onClick={() =>
                   toggleWishlist({
-                    listingId: item._id,
+                    listingId: String(item._id),
                     slug: item.seo?.slug,
                     title: item.title,
                     priceCents: item.pricing?.priceCents || 0,
@@ -388,11 +438,12 @@ export default function Product() {
 
         {/* Reviews */}
         <section className="mt-8 p-6 md:p-8 rounded-2xl bg-white border border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Reviews</h2>
-          {reviews.length > 0 && (
+          <h2 className="text-xl font-bold text-gray-900 mb-1">Reviews</h2>
+          <p className="text-sm text-gray-500 mb-4">Only verified buyers who received their order can leave a review.</p>
+          {reviews.length > 0 ? (
             <div className="space-y-4 mb-6">
-              {reviews.map((r, i) => (
-                <div key={i} className="border-b border-gray-100 pb-4 last:border-0">
+              {reviews.map((r) => (
+                <div key={r._id || `${r.customerName}-${r.createdAt}`} className="border-b border-gray-100 pb-4 last:border-0">
                   <div className="flex items-center gap-2 mb-1">
                     <div className="flex text-amber-500">
                       {[1, 2, 3, 4, 5].map((n) => (
@@ -408,10 +459,15 @@ export default function Product() {
                 </div>
               ))}
             </div>
+          ) : (
+            <p className="text-sm text-gray-500 mb-6">No verified buyer reviews yet.</p>
           )}
-          {user ? (
-            <form onSubmit={handleSubmitReview} className="space-y-3">
-              <p className="text-sm font-medium text-gray-700">Leave a review</p>
+          {user?.role === "vendor" ? (
+            <p className="text-sm text-gray-500">Vendor accounts cannot leave product reviews.</p>
+          ) : user && reviewEligibility?.canReview ? (
+            <form onSubmit={handleSubmitReview} className="space-y-3 rounded-xl border border-purple-100 bg-purple-50/40 p-4">
+              <p className="text-sm font-medium text-gray-900">Leave your review</p>
+              <p className="text-xs text-gray-600">Your order for this item was delivered — thanks for sharing your experience.</p>
               <div className="flex items-center gap-2">
                 <label className="text-sm text-gray-600">Rating:</label>
                 <select
@@ -428,7 +484,7 @@ export default function Product() {
                 placeholder="Your review (optional)"
                 value={reviewComment}
                 onChange={(e) => setReviewComment(e.target.value)}
-                className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm min-h-[80px]"
+                className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm min-h-[80px] bg-white"
                 maxLength={2000}
               />
               {reviewError && <p className="text-sm text-red-600">{reviewError}</p>}
@@ -440,9 +496,20 @@ export default function Product() {
                 {reviewSubmitting ? "Submitting…" : "Submit review"}
               </button>
             </form>
+          ) : user && reviewEligibility?.hasReviewed ? (
+            <p className="text-sm text-gray-600">You already reviewed this product. Thank you!</p>
+          ) : user ? (
+            <p className="text-sm text-gray-500">
+              You can leave a review once your order for this item has been delivered. Check{" "}
+              <Link to="/account/notifications" className="text-purple-600 font-medium hover:underline">
+                notifications
+              </Link>{" "}
+              after delivery.
+            </p>
           ) : (
             <p className="text-sm text-gray-500">
-              <Link to="/login" className="text-purple-600 font-medium hover:underline">Log in</Link> to leave a review.
+              <Link to="/login" className="text-purple-600 font-medium hover:underline">Log in</Link> after a delivered
+              order to leave a verified review.
             </p>
           )}
         </section>

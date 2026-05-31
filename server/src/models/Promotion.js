@@ -27,13 +27,25 @@ const PromotionSchema = new mongoose.Schema(
     /** Listing IDs this promotion applies to. Empty = all vendor listings */
     listingIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "Listing" }],
 
-    active: { type: Boolean, default: true, index: true },
+    active: { type: Boolean, default: false, index: true },
     featuredCampaign: { type: Boolean, default: false },
+    moderation: {
+      status: {
+        type: String,
+        enum: ["pending", "approved", "rejected"],
+        default: "pending",
+        index: true,
+      },
+      reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+      reviewedAt: { type: Date, default: null },
+      reviewNote: { type: String, default: "", trim: true, maxlength: 500 },
+    },
   },
   { timestamps: true }
 );
 
 PromotionSchema.index({ vendor: 1, active: 1, startDate: 1, endDate: 1 });
+PromotionSchema.index({ "moderation.status": 1, scope: 1, createdAt: -1 });
 PromotionSchema.index({ code: 1 }, { sparse: true }); // only index non-empty codes
 
 export default mongoose.model("Promotion", PromotionSchema);

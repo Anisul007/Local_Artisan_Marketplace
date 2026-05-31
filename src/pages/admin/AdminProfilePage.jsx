@@ -59,13 +59,13 @@ export default function AdminProfilePage() {
   }
 
   if (loading) {
-    return <div className="h-28 animate-pulse rounded-xl bg-white/10" />;
+    return <div className="h-28 animate-pulse rounded-xl bg-gray-100" />;
   }
 
   return (
-    <form onSubmit={submit} className="rounded-2xl border border-white/15 bg-slate-900/70 p-5 shadow-xl shadow-black/25">
-      <h1 className="text-xl font-bold text-white">Admin Profile</h1>
-      <p className="mt-1 text-sm text-slate-300">Manage your admin identity and contact details.</p>
+    <form onSubmit={submit} className="admin-card">
+      <h1 className="admin-card-title">Admin Profile</h1>
+      <p className="mt-1 text-sm text-gray-600">Manage your admin identity and contact details.</p>
 
       {msg && <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-2 text-sm text-emerald-700">{msg}</div>}
       {err && <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-2 text-sm text-red-700">{err}</div>}
@@ -78,19 +78,19 @@ export default function AdminProfilePage() {
         <Field label="Phone" value={form.phone} onChange={(v) => setForm((p) => ({ ...p, phone: v }))} />
         <Field label="Department" value={form.department} onChange={(v) => setForm((p) => ({ ...p, department: v }))} />
       </div>
-      <label className="mt-3 block text-sm font-semibold text-slate-200">
+      <label className="mt-3 block text-sm font-semibold text-gray-700">
         Bio
         <textarea
           value={form.bio}
           onChange={(e) => setForm((p) => ({ ...p, bio: e.target.value }))}
           rows={4}
-          className="mt-1 w-full rounded-lg border border-white/20 bg-white/5 px-3 py-2 text-sm text-slate-100"
+          className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900"
         />
       </label>
       <button
         type="submit"
         disabled={saving}
-        className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+        className="mt-4 admin-btn admin-btn-md admin-btn-brand hover:bg-indigo-500 disabled:opacity-60"
       >
         {saving ? "Saving..." : "Save profile"}
       </button>
@@ -100,13 +100,13 @@ export default function AdminProfilePage() {
 
 function Field({ label, value, onChange, type = "text" }) {
   return (
-    <label className="block text-sm font-semibold text-slate-200">
+    <label className="block text-sm font-semibold text-gray-700">
       {label}
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 h-10 w-full rounded-lg border border-white/20 bg-white/5 px-3 text-sm text-slate-100"
+        className="mt-1 h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-900"
       />
     </label>
   );

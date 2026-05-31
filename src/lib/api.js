@@ -89,6 +89,7 @@ export const CategoriesAPI = {
 
 // ---- Public vendor storefront ----
 export const PublicVendorsAPI = {
+  list: (limit = 12) => apiGet(`vendors${qs({ limit })}`),
   get: (id) => apiGet(`vendors/${id}`),
   reviews: (id, { page = 1, limit = 10 } = {}) =>
     apiGet(`vendors/${id}/reviews${qs({ page, limit })}`),
@@ -96,8 +97,8 @@ export const PublicVendorsAPI = {
 
 // ---- Vendor Listings (requires auth cookie) ----
 export const ListingsAPI = {
-  list:   (q = "", status = "", page = 1) =>
-    apiGet(`vendor/listings${qs({ q, status, page })}`),
+  list:   (q = "", status = "", page = 1, limit = "") =>
+    apiGet(`vendor/listings${qs({ q, status, page, limit })}`),
   read:   (id)            => apiGet(`vendor/listings/${id}`),
   create: (payload)       => apiPost(`vendor/listings`, payload),
   update: (id, payload)   => apiPut(`vendor/listings/${id}`, payload), // keep POST for compatibility
@@ -157,6 +158,7 @@ export const AdminAPI = {
   updateProfile: (payload) => apiPut("admin/profile", payload),
   login: (body) => apiPost("auth/admin/login", body),
   dashboard: () => apiGet("admin/dashboard"),
+  analyticsDetail: (metric, { months = 24 } = {}) => apiGet(`admin/analytics/${metric}${qs({ months })}`),
   notificationSummary: () => apiGet("admin/notifications/summary"),
   pendingListings: () => apiGet("admin/listings/pending"),
   moderateListing: (id, decision, note = "") => apiPatch(`admin/listings/${id}/moderate`, { decision, note }),
@@ -193,12 +195,15 @@ export const AdminAPI = {
   updateOrderStatus: (id, status) => apiPatch(`admin/orders/${id}/status`, { status }),
   cancelOrder: (id) => apiPatch(`admin/orders/${id}/cancel`, {}),
   updateReturn: (id, state) => apiPatch(`admin/orders/${id}/return`, { state }),
-  payments: ({ status = "" } = {}) => apiGet(`admin/payments${qs({ status })}`),
+  payments: ({ status = "", filter = "needs_refund" } = {}) => apiGet(`admin/payments${qs({ status, filter })}`),
   refundDecision: (id, decision, reason = "") => apiPatch(`admin/payments/${id}/refund`, { decision, reason }),
   shippingSettings: () => apiGet("admin/shipping-settings"),
   updateShippingSettings: (payload) => apiPut("admin/shipping-settings", payload),
   reviews: ({ status = "" } = {}) => apiGet(`admin/reviews${qs({ status })}`),
   moderateReview: (id, action, note = "") => apiPatch(`admin/reviews/${id}/moderate`, { action, note }),
+  vendorPromotions: (status = "pending") => apiGet(`admin/promotions/vendor${qs({ status })}`),
+  moderateVendorPromotion: (id, decision, reviewNote = "") =>
+    apiPatch(`admin/promotions/vendor/${id}/moderate`, { decision, reviewNote }),
   globalPromotions: () => apiGet("admin/promotions/global"),
   createGlobalPromotion: (payload) => apiPost("admin/promotions/global", payload),
   updateGlobalPromotion: (id, payload) => apiPatch(`admin/promotions/global/${id}`, payload),
@@ -215,6 +220,7 @@ export const ContactAPI = {
 
 export const AbuseReportsAPI = {
   create: (body) => apiPost("abuse-reports", body),
+  listMine: () => apiGet("abuse-reports/mine"),
 };
 
 // ---- Customer Orders (auth required) ----
@@ -225,9 +231,17 @@ export const OrdersAPI = {
   sendMessage: (orderId, text) => apiPost(`orders/${orderId}/messages`, { text }),
 };
 
+export const CustomerNotificationsAPI = {
+  notificationSummary: () => apiGet("customer/notifications/summary"),
+  list: () => apiGet("customer/notifications"),
+  markSeen: () => apiPost("customer/notifications/mark-seen"),
+};
+
 // ---- Vendor order workflow + analytics ----
 export const VendorOrdersAPI = {
   notificationSummary: () => apiGet("vendor/notifications/summary"),
+  notifications: () => apiGet("vendor/notifications"),
+  markNotificationsSeen: () => apiPost("vendor/notifications/mark-seen"),
   list: ({ page = 1, limit = 20, status = "", q = "", sortBy = "date", sortDir = "desc" } = {}) =>
     apiGet(`vendor/orders${qs({ page, limit, status, q, sortBy, sortDir })}`),
   updateStatus: (orderId, status) => apiPatch(`vendor/orders/${orderId}/status`, { status }),
@@ -244,5 +258,7 @@ export const CustomerReviewsAPI = {
   create: (body) => apiPost("customer/reviews", body),
   list: (listingId, page = 1, limit = 10) =>
     apiGet(`customer/reviews${qs({ listingId, page, limit })}`),
+  eligibility: (listingId) =>
+    apiGet(`customer/reviews/eligibility${qs({ listingId })}`),
 };
 

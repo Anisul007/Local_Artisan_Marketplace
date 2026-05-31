@@ -55,6 +55,7 @@ export default function OrderSuccess() {
       if (!r?.ok) throw new Error(r?.data?.message || "Could not send message");
       setMsgDraft("");
       setMsgOk("Message sent. Vendors on this order have been notified.");
+      window.dispatchEvent(new Event("customer-notifications-changed"));
       await refreshOrder();
     } catch (e) {
       setMsgErr(e?.message || "Could not send message");
@@ -99,6 +100,24 @@ export default function OrderSuccess() {
           <p className="font-semibold text-gray-900">Order number</p>
           <p className="text-lg font-mono text-purple-600">{order.orderNumber}</p>
           <p className="mt-2 text-sm text-gray-600">Total: {money(order.totalCents, order.currency)}</p>
+          {order.shippingCents > 0 && (
+            <p className="text-sm text-gray-600">
+              Shipping ({order.shipping?.deliveryMethod === "express" ? "Express" : "Standard"}):{" "}
+              {money(order.shippingCents, order.currency)}
+            </p>
+          )}
+          {order.paymentMethod && order.paymentMethod !== "card" && (
+            <p className="text-sm text-gray-600">
+              Paid with:{" "}
+              {order.paymentMethod === "google_pay"
+                ? "Google Pay"
+                : order.paymentMethod === "paypal"
+                  ? "PayPal"
+                  : order.paymentMethod === "afterpay"
+                    ? "Afterpay"
+                    : order.paymentMethod}
+            </p>
+          )}
           <p className="text-sm text-gray-600">Estimated delivery: {estimatedDelivery}</p>
         </div>
 
@@ -153,7 +172,7 @@ export default function OrderSuccess() {
           </button>
         </div>
 
-        {order.status === "delivered" && order.items?.some((i) => i.slug) && (
+        {(order.status === "delivered" || order.status === "completed") && order.items?.some((i) => i.slug) && (
           <div className="text-sm text-gray-600 mb-4 text-left">
             <p className="mb-2">Leave a review:</p>
             <ul className="space-y-1">

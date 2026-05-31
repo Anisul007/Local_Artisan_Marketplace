@@ -92,7 +92,10 @@ router.put("/profile", requireAuth, requireVendor, async (req, res, next) => {
 
     const allowed = ["businessName", "contactEmail", "phone", "bio", "brandColor", "logoUrl", "website"];
     for (const k of allowed) {
-      if (req.body[k] !== undefined) doc[k] = String(req.body[k]).slice(0, 300);
+      if (req.body[k] === undefined) continue;
+      let val = String(req.body[k]);
+      if (k === "contactEmail") val = val.trim().toLowerCase();
+      doc[k] = val.slice(0, 300);
     }
 
     const addr = normalizeAddress(req.body.address);

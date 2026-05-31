@@ -6,7 +6,7 @@ import { useCart } from "../context/CartContext";
 import { useWishlist } from "../context/WishlistContext";
 import Avatar from "../components/ui/Avatar";
 import Confirm from "../components/ui/Confirm";
-import { VendorAPI } from "../lib/api";
+import { VendorAPI, CustomerNotificationsAPI } from "../lib/api";
 import {
   User,
   Heart,
@@ -19,6 +19,7 @@ import {
   Package,
   Truck,
   ShieldCheck,
+  Bell,
 } from "lucide-react";
 import "./Navbar.css";
 
@@ -33,6 +34,8 @@ export default function NavBar() {
   const [vendorLogoUrl, setVendorLogoUrl] = useState(null);
   const isVendor = !!(user && (user.role === "vendor" || user.isVendor === true));
   const isAdmin = user?.role === "admin";
+  const isCustomer = !!(user && user.role === "customer");
+  const [customerNotifyCount, setCustomerNotifyCount] = useState(0);
 
   const accountRef = useRef(null);
 
@@ -71,6 +74,33 @@ export default function NavBar() {
       })
       .catch(() => setVendorLogoUrl(null));
   }, [user, isVendor]);
+
+  useEffect(() => {
+    if (!isCustomer) {
+      setCustomerNotifyCount(0);
+      return undefined;
+    }
+    let cancelled = false;
+    const tick = () => {
+      CustomerNotificationsAPI.notificationSummary()
+        .then((r) => {
+          if (cancelled || !r?.ok) return;
+          const d = r?.data?.data ?? r?.data ?? {};
+          const n = Number(d.unreadTotal);
+          setCustomerNotifyCount(Number.isFinite(n) ? n : 0);
+        })
+        .catch(() => {});
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    const onChange = () => tick();
+    window.addEventListener("customer-notifications-changed", onChange);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      window.removeEventListener("customer-notifications-changed", onChange);
+    };
+  }, [isCustomer, user?.id]);
 
   function submitSearch(e) {
     e.preventDefault();
@@ -211,6 +241,21 @@ export default function NavBar() {
                               <span>Dashboard</span>
                             </Link>
                             <Link
+                              to="/account/notifications"
+                              className="dropdown-item"
+                              onClick={() => setShowAccount(false)}
+                            >
+                              <span className="dropdown-item-icon">
+                                <Bell size={15} />
+                              </span>
+                              <span>Notifications</span>
+                              {customerNotifyCount > 0 && (
+                                <span className="dropdown-badge">
+                                  {customerNotifyCount > 99 ? "99+" : customerNotifyCount}
+                                </span>
+                              )}
+                            </Link>
+                            <Link
                               to="/orders"
                               className="dropdown-item"
                               onClick={() => setShowAccount(false)}
@@ -288,6 +333,14 @@ export default function NavBar() {
             {/* Wishlist + cart: customer shopping only; vendors cannot shop on the marketplace */}
             {!isVendor && !isAdmin && (
               <>
+                {isCustomer && user ? (
+                  <Link to="/account/notifications" className="icon-btn relative" aria-label="Notifications">
+                    <Bell size={16} />
+                    {customerNotifyCount > 0 && (
+                      <span className="cart-badge">{customerNotifyCount > 99 ? "99+" : customerNotifyCount}</span>
+                    )}
+                  </Link>
+                ) : null}
                 <Link to="/wishlist" className="icon-btn icon-btn-wishlist" aria-label="Wishlist">
                   <Heart size={16} />
                   {wishlistCount > 0 && (

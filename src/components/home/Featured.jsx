@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import Modal from "../ui/Modal";
 import { PublicListingsAPI } from "../../lib/api";
-import { useCart } from "../../context/CartContext";
+import { useCart, isAtStockLimit, isOutOfStock } from "../../context/CartContext";
 
 const PLACEHOLDER_IMG = "/images/placeholder.svg";
 const FEATURED_LIMIT = 12;
@@ -22,6 +22,7 @@ function normalizeListing(p) {
     currency: p?.pricing?.currency || "AUD",
     imageUrl: img || "",
     maker: p.vendor?.businessName || p.vendor?.displayName || "Artisan",
+    stockQty: Math.max(0, Number(p?.inventory?.stockQty) || 0),
   };
 }
 
@@ -35,7 +36,7 @@ export default function Featured() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [index, setIndex] = useState(0);
-  const { addItem, purchaseBlocked, vendorPurchaseMessage } = useCart();
+  const { addItem, items, purchaseBlocked, vendorPurchaseMessage } = useCart();
 
   useEffect(() => {
     PublicListingsAPI.browse({ page: 1, sort: "newest" })
@@ -72,6 +73,7 @@ export default function Featured() {
       title: sel.name,
       priceCents: sel.priceCents,
       quantity: 1,
+      stockQty: sel.stockQty,
       imageUrl: sel.imageUrl,
       currency: sel.currency,
     });
@@ -139,10 +141,10 @@ export default function Featured() {
               {products.map((p, i) => (
                 <div
                   key={p.id || i}
-                  className="shrink-0 border rounded-2xl overflow-hidden bg-white p-3 hover:shadow-xl hover:-translate-y-1 transition"
+                  className="shrink-0 flex flex-col border rounded-2xl overflow-hidden bg-white p-3 hover:shadow-xl hover:-translate-y-1 transition"
                   style={{ flexBasis: `calc((100% - 3*1rem) / ${VISIBLE})` }}
                 >
-                <Link to={`/product/${p.slug}`} className="block">
+                <Link to={`/product/${p.slug}`} className="block flex-1">
                   <div className="aspect-[4/3] bg-gray-100 overflow-hidden rounded-xl">
                     <img
                       src={p.imageUrl || PLACEHOLDER_IMG}
@@ -196,16 +198,48 @@ export default function Featured() {
               <h3 className="text-xl font-bold">{sel.name}</h3>
               {sel.maker && <p className="text-sm text-gray-500">by {sel.maker}</p>}
               <div className="text-orange-700 font-bold mt-1">{money(sel.priceCents, sel.currency)}</div>
+              {sel.stockQty != null && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {sel.stockQty > 0 ? `${sel.stockQty} in stock` : "Out of stock"}
+                </p>
+              )}
               <p className="mt-2 text-gray-600">Small-batch, slow-made by a local maker.</p>
               <div className="mt-4 flex gap-2">
                 <button
                   type="button"
-                  disabled={purchaseBlocked}
-                  title={purchaseBlocked ? vendorPurchaseMessage : undefined}
+                  disabled={
+                    purchaseBlocked ||
+                    isOutOfStock(sel.stockQty) ||
+                    isAtStockLimit(
+                      items?.find((i) => i.listingId === sel.id || i.slug === sel.slug),
+                      sel.stockQty
+                    )
+                  }
+                  title={
+                    purchaseBlocked
+                      ? vendorPurchaseMessage
+                      : isOutOfStock(sel.stockQty)
+                        ? "Out of stock"
+                        : isAtStockLimit(
+                              items?.find((i) => i.listingId === sel.id || i.slug === sel.slug),
+                              sel.stockQty
+                            )
+                          ? `Only ${sel.stockQty} available`
+                          : undefined
+                  }
                   className="px-4 py-2 rounded-xl bg-gray-900 text-white font-semibold hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-400 disabled:hover:bg-gray-400"
                   onClick={addToCartFromModal}
                 >
-                  {purchaseBlocked ? "Customer accounts only" : "Add to cart"}
+                  {purchaseBlocked
+                    ? "Customer accounts only"
+                    : isOutOfStock(sel.stockQty)
+                      ? "Out of stock"
+                      : isAtStockLimit(
+                            items?.find((i) => i.listingId === sel.id || i.slug === sel.slug),
+                            sel.stockQty
+                          )
+                        ? "Max in cart"
+                        : "Add to cart"}
                 </button>
                 <Link
                   to={`/product/${sel.slug}`}

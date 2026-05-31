@@ -31,6 +31,7 @@ import adminProfileRoutes from "./routes/admin-profile.js";
 import adminToolsRoutes from "./routes/admin-tools.js";
 import contactMessagesRoutes from "./routes/contact-messages.js";
 import abuseReportsRoutes from "./routes/abuse-reports.js";
+import customerNotificationsRoutes from "./routes/customer-notifications.js";
 
 const app = express();
 app.disable("x-powered-by");
@@ -109,10 +110,9 @@ app.use(
 );
 
 /* ---------------------------- Static files --------------------------- */
-// legacy public folder
-app.use("/Public", express.static(path.join(process.cwd(), "Public")));
-// serve uploaded vendor logos: /uploads/vendor-logos/xxx.jpg
-app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+const publicDir = path.join(process.cwd(), "Public");
+app.use("/Public", express.static(publicDir));
+app.use("/uploads", express.static(path.join(publicDir, "uploads")));
 
 /* ---------------------------- Rate limiting --------------------------- */
 app.use(
@@ -174,9 +174,28 @@ app.use("/api/promotions", promotionsPublicRoutes);
 
 // Customer reviews (POST create, GET by listingId)
 app.use("/api/customer/reviews", customerReviewsRoutes);
+app.use("/api/customer", customerNotificationsRoutes);
 
 // Uploads (vendor-only inside the route)
 app.use("/api/uploads", uploadsRoutes);
+
+/* ---------------------- Production: serve built UI -------------------- */
+if (process.env.NODE_ENV === "production") {
+  const distDir = path.resolve(process.cwd(), "..", "dist");
+  app.use(express.static(distDir));
+  app.get("*", (req, res, next) => {
+    if (
+      req.path.startsWith("/api") ||
+      req.path.startsWith("/Public") ||
+      req.path.startsWith("/uploads")
+    ) {
+      return next();
+    }
+    res.sendFile(path.join(distDir, "index.html"), (err) => {
+      if (err) next();
+    });
+  });
+}
 
 /* ----------------------------- 404 handler ---------------------------- */
 app.use((req, res, next) => {
@@ -199,12 +218,34 @@ app.use((err, _req, res, _next) => {
 /* ----------------------------- Boot server --------------------------- */
 const PORT = process.env.PORT || 4000;
 
-connectDB(process.env.MONGO_URI || "").then(async () => {
-  await verifyMailConfig();
-  app.listen(PORT, () =>
-    console.log(`🚀 API running at http://localhost:${PORT}`)
-  );
+connectDB(process.env.MONGO_URI || "")
+  .then(async () => {
+    await verifyMailConfig();
+    const server = app.listen(PORT, () => {
+      console.log(`🚀 API running at http://localhost:${PORT}`);
+    });
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        console.error(
+          `❌ Port ${PORT} is already in use. Close the other API terminal or run: npx kill-port ${PORT}`
+        );
+      } else {
+        console.error("❌ Server failed to start:", err.message);
+      }
+      process.exit(1);
+    });
+  })
+  .catch((err) => {
+    console.error("❌ Failed to start API:", err.message);
+    console.error("   Check that MongoDB is running and server/.env has a valid MONGO_URI.");
+    process.exit(1);
+  });
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[API] Unhandled rejection:", reason);
 });
 
-
-
+process.on("uncaughtException", (err) => {
+  console.error("[API] Uncaught exception:", err?.message || err);
+  process.exit(1);
+});

@@ -25,7 +25,31 @@ function saveCart(items) {
 const VENDOR_PURCHASE_MSG =
   "Vendor accounts cannot buy on the marketplace. Sign in with a customer account to purchase.";
 
-/** Cart item: { listingId, slug, title, priceCents, quantity, imageUrl, currency } */
+export function parseStockQty(value) {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Math.floor(Number(value));
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
+export function mergeStockQty(incoming, existingStockQty) {
+  const next = parseStockQty(incoming);
+  if (next !== null) return next;
+  return parseStockQty(existingStockQty);
+}
+
+export function isAtStockLimit(cartEntry, stockQty) {
+  const limit = mergeStockQty(stockQty, cartEntry?.stockQty);
+  if (limit === null) return false;
+  return (Number(cartEntry?.quantity) || 0) >= limit;
+}
+
+export function isOutOfStock(stockQty) {
+  const limit = parseStockQty(stockQty);
+  return limit === 0;
+}
+
+/** Cart item: { listingId, slug, title, priceCents, quantity, imageUrl, currency, stockQty } */
 /** Coupon: { code, discountCents, promotionName } from validateCoupon */
 export function CartProvider({ children }) {
   const { user } = useAuth();
@@ -58,32 +82,79 @@ export function CartProvider({ children }) {
     (item) => {
       if (purchaseBlocked) {
         pushToast({ variant: "error", message: VENDOR_PURCHASE_MSG });
-        return;
+        return { ok: false };
       }
-      const { listingId, slug, title, priceCents, quantity = 1, imageUrl, currency = "AUD" } = item;
-      if (!listingId && !slug) return;
+
+      const {
+        listingId,
+        slug,
+        title,
+        priceCents,
+        quantity = 1,
+        imageUrl,
+        currency = "AUD",
+        stockQty,
+      } = item;
+
+      if (!listingId && !slug) return { ok: false };
+
+      const addQty = Math.max(1, Math.floor(Number(quantity)) || 1);
+      const label = title || "This item";
+      let blocked = false;
+      let blockedMessage = "";
+      let successMessage = "";
+
       setItems((prev) => {
         const existing = prev.find(
           (i) => i.listingId === listingId || (i.slug === slug && slug)
         );
+        const limit = mergeStockQty(stockQty, existing?.stockQty);
+
+        if (limit === 0) {
+          blocked = true;
+          blockedMessage = `${label} is out of stock.`;
+          return prev;
+        }
+
+        const currentQty = Number(existing?.quantity) || 0;
+        const attemptedQty = currentQty + addQty;
+
+        if (limit !== null && attemptedQty > limit) {
+          blocked = true;
+          blockedMessage =
+            currentQty > 0
+              ? `Only ${limit} left in stock for ${label}. You already have ${currentQty} in your cart.`
+              : `Only ${limit} left in stock for ${label}.`;
+          return prev;
+        }
+
+        const nextPriceCents = Number(priceCents);
+
         if (existing) {
-          const addQty = quantity || 1;
-          const newQty = (existing.quantity || 0) + addQty;
-          pushToast({
-            variant: "success",
-            message:
-              newQty > 1
-                ? `${title || "Item"} added to cart (${newQty})`
-                : `${title || "Item"} added to cart`,
-          });
+          const newQty = currentQty + addQty;
+          successMessage =
+            newQty > 1
+              ? `${label} added to cart (${newQty})`
+              : `${label} added to cart`;
           return prev.map((i) =>
-            i === existing ? { ...i, quantity: i.quantity + (quantity || 1) } : i
+            i === existing
+              ? {
+                  ...i,
+                  quantity: newQty,
+                  stockQty: limit ?? i.stockQty ?? null,
+                  priceCents:
+                    Number.isFinite(nextPriceCents) && nextPriceCents > 0
+                      ? nextPriceCents
+                      : i.priceCents,
+                  currency: currency || i.currency || "AUD",
+                  title: title || i.title,
+                  imageUrl: imageUrl || i.imageUrl || "",
+                }
+              : i
           );
         }
-        pushToast({
-          variant: "success",
-          message: `${title || "Item"} added to cart`,
-        });
+
+        successMessage = `${label} added to cart`;
         return [
           ...prev,
           {
@@ -91,12 +162,21 @@ export function CartProvider({ children }) {
             slug: slug || null,
             title: title || "Product",
             priceCents: Number(priceCents) || 0,
-            quantity: quantity || 1,
+            quantity: addQty,
             imageUrl: imageUrl || "",
             currency: currency || "AUD",
+            stockQty: limit,
           },
         ];
       });
+
+      if (blocked) {
+        pushToast({ variant: "error", message: blockedMessage });
+        return { ok: false };
+      }
+
+      pushToast({ variant: "success", message: successMessage });
+      return { ok: true };
     },
     [pushToast, purchaseBlocked]
   );
@@ -112,28 +192,48 @@ export function CartProvider({ children }) {
   const updateQuantity = useCallback(
     (listingIdOrSlug, quantity) => {
       const q = Math.max(0, Math.floor(Number(quantity)) || 0);
+      let blocked = false;
+      let blockedMessage = "";
+
       setItems((prev) => {
+        const item = prev.find(
+          (i) => i.listingId === listingIdOrSlug || i.slug === listingIdOrSlug
+        );
+        if (!item) return prev;
+
         if (purchaseBlocked) {
-          const item = prev.find(
-            (i) => i.listingId === listingIdOrSlug || i.slug === listingIdOrSlug
-          );
-          if (!item) return prev;
           if (q > (item.quantity || 0)) {
-            pushToast({ variant: "error", message: VENDOR_PURCHASE_MSG });
+            blocked = true;
+            blockedMessage = VENDOR_PURCHASE_MSG;
             return prev;
           }
         }
+
+        const limit = parseStockQty(item.stockQty);
+        if (limit !== null && q > limit) {
+          blocked = true;
+          blockedMessage = `Only ${limit} left in stock for ${item.title || "this item"}.`;
+          return prev;
+        }
+
         if (q === 0) {
           return prev.filter(
             (i) => i.listingId !== listingIdOrSlug && i.slug !== listingIdOrSlug
           );
         }
+
         return prev.map((i) =>
           i.listingId === listingIdOrSlug || i.slug === listingIdOrSlug
             ? { ...i, quantity: q }
             : i
         );
       });
+
+      if (blocked) {
+        pushToast({ variant: "error", message: blockedMessage });
+        return { ok: false };
+      }
+      return { ok: true };
     },
     [purchaseBlocked, pushToast]
   );

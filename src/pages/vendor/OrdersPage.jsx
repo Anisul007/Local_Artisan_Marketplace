@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { API, VendorOrdersAPI } from "../../lib/api";
 
 const STATUS_LABEL = {
@@ -35,9 +36,11 @@ function messageRoleLabel(fromRole) {
 
 function bumpVendorNotify() {
   window.dispatchEvent(new Event("vendor-orders-changed"));
+  window.dispatchEvent(new Event("vendor-notifications-changed"));
 }
 
 export default function OrdersPage() {
+  const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [summary, setSummary] = useState({
     totalOrders: 0,
@@ -111,6 +114,17 @@ export default function OrdersPage() {
     load({ status: statusFilter, query: q, pageNum: page, sort: sortBy });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, q, page, sortBy]);
+
+  useEffect(() => {
+    const highlight = searchParams.get("order");
+    if (!highlight || items.length === 0) return;
+    const match = items.find((o) => String(o._id) === highlight);
+    if (!match) return;
+    setExpanded((prev) => ({ ...prev, [match._id]: true }));
+    requestAnimationFrame(() => {
+      document.getElementById(`vendor-order-${match._id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [searchParams, items]);
 
   async function updateStatus(orderId, status) {
     if (!orderId || !status) return;
@@ -240,7 +254,10 @@ export default function OrdersPage() {
           <Stat label="New" value={summary?.statusBreakdown?.new ?? 0} />
           <Stat label="Completed" value={summary?.statusBreakdown?.completed ?? 0} />
           <Stat label="Revenue" value={money(summary.revenueCents)} />
-          <Stat label="Est. profit" value={money(analytics.estimatedProfitCents)} />
+          <Stat
+            label="Est. profit"
+            value={money(Math.round(Number(summary.revenueCents || 0) * 0.35))}
+          />
           <Stat label="Units sold" value={summary.totalUnits} />
         </div>
 
@@ -275,6 +292,7 @@ export default function OrdersPage() {
               return (
                 <div
                   key={o._id}
+                  id={`vendor-order-${o._id}`}
                   className={`rounded-xl border ${o.status === "new" ? "border-emerald-300 ring-2 ring-emerald-100" : "border-gray-200"}`}
                 >
                   <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -523,6 +541,22 @@ export default function OrdersPage() {
                               {[o.shipping?.line1, o.shipping?.line2, o.shipping?.city, o.shipping?.state, o.shipping?.postcode, o.shipping?.country]
                                 .filter(Boolean)
                                 .join(", ") || "No shipping details"}
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-3 text-xs">
+                              {o.customer?.id ? (
+                                <Link
+                                  to={`/vendor/report-abuse?targetType=customer&targetId=${o.customer.id}&targetLabel=${encodeURIComponent(o.customer?.name || "Customer")}`}
+                                  className="font-semibold text-rose-700 hover:underline"
+                                >
+                                  Report customer abuse
+                                </Link>
+                              ) : null}
+                              <Link
+                                to={`/vendor/report-abuse?targetType=order&targetId=${o._id}&targetLabel=${encodeURIComponent(o.code || "Order")}`}
+                                className="font-semibold text-rose-700 hover:underline"
+                              >
+                                Report order issue
+                              </Link>
                             </div>
                             <div className="mt-3">
                               <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">Decision & status</label>

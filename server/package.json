@@ -5,11 +5,13 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "predev": "npx kill-port 4000",
     "dev": "nodemon src/index.js",
+    "dev:clean": "npx kill-port 4000 && nodemon src/index.js",
+    "start": "node src/index.js",
     "seed:cats": "node src/seed/categories.seed.js",
     "seed:vendors": "node src/seed/vendors-and-listings.seed.js",
-    "seed:admin": "node scripts/seed-admin.mjs"
+    "seed:admin": "node scripts/seed-admin.mjs",
+    "seed:all": "npm run seed:cats && npm run seed:vendors && npm run seed:admin"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -23,9 +25,14 @@
     "mongoose": "^8.5.0",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
-    "nodemailer": "^8.0.4"
+    "nodemailer": "^8.0.4",
+    "pdfkit": "^0.18.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
+  },
+  "engines": {
+    "node": ">=18 <=22"
   }
 }

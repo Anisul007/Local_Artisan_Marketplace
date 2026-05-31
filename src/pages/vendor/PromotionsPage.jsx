@@ -27,7 +27,6 @@ export default function PromotionsPage() {
     minPurchaseDollars: "",
     startDate: "",
     endDate: "",
-    active: true,
   });
 
   const fetchList = async () => {
@@ -59,7 +58,6 @@ export default function PromotionsPage() {
       minPurchaseDollars: "",
       startDate: "",
       endDate: "",
-      active: true,
     });
     setShowForm(true);
   };
@@ -74,7 +72,6 @@ export default function PromotionsPage() {
       minPurchaseDollars: p.minPurchaseCents ? (p.minPurchaseCents / 100).toFixed(2) : "",
       startDate: p.startDate ? new Date(p.startDate).toISOString().slice(0, 10) : "",
       endDate: p.endDate ? new Date(p.endDate).toISOString().slice(0, 10) : "",
-      active: p.active !== false,
     });
     setShowForm(true);
   };
@@ -102,16 +99,15 @@ export default function PromotionsPage() {
       minPurchaseCents: minCents,
       startDate: new Date(form.startDate).toISOString(),
       endDate: new Date(form.endDate).toISOString(),
-      active: form.active,
     };
 
     try {
       if (editingId) {
-        await PromotionsAPI.update(editingId, payload);
-        setToast("Promotion updated");
+        const res = await PromotionsAPI.update(editingId, payload);
+        setToast(res?.data?.message || "Promotion updated");
       } else {
-        await PromotionsAPI.create(payload);
-        setToast("Promotion created");
+        const res = await PromotionsAPI.create(payload);
+        setToast(res?.data?.message || "Promotion submitted for approval");
       }
       closeForm();
       fetchList();
@@ -134,14 +130,18 @@ export default function PromotionsPage() {
   };
 
   const now = new Date();
-  const isActive = (p) => p.active && new Date(p.startDate) <= now && new Date(p.endDate) >= now;
+  const modStatus = (p) => p.moderation?.status || "pending";
+  const isLive = (p) =>
+    modStatus(p) === "approved" && p.active && new Date(p.startDate) <= now && new Date(p.endDate) >= now;
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-6">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Promotions & discounts</h1>
-          <p className="mt-1 text-sm text-gray-500">Create coupon codes or store-wide sales. Customers enter codes at checkout.</p>
+          <p className="mt-1 text-sm text-gray-500">
+            Submit discounts for admin approval. After approval, coupon codes work at checkout and automatic sales show on your storefront.
+          </p>
         </div>
         <button
           type="button"
@@ -245,15 +245,9 @@ export default function PromotionsPage() {
                 />
               </div>
             </div>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={form.active}
-                onChange={(e) => setForm({ ...form, active: e.target.checked })}
-                className="h-4 w-4 rounded border-gray-300 text-indigo-600"
-              />
-              <span className="text-sm font-medium text-gray-700">Active</span>
-            </label>
+            <p className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              New and edited promotions are sent to the admin team for approval before they go live.
+            </p>
             <div className="flex gap-3 pt-2">
               <button type="submit" className="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">
                 {editingId ? "Update" : "Create"}
@@ -297,15 +291,21 @@ export default function PromotionsPage() {
                       <span>· {formatDate(p.startDate)} – {formatDate(p.endDate)}</span>
                       {p.minPurchaseCents > 0 && <span>· Min {money(p.minPurchaseCents)}</span>}
                     </div>
-                    <div className="mt-1">
-                      {isActive(p) ? (
-                        <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Active now</span>
-                      ) : !p.active ? (
-                        <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Inactive</span>
-                      ) : new Date(p.endDate) < now ? (
-                        <span className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800">Ended</span>
-                      ) : (
-                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Scheduled</span>
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {modStatus(p) === "pending" && (
+                        <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">Pending approval</span>
+                      )}
+                      {modStatus(p) === "rejected" && (
+                        <span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-800">Rejected</span>
+                      )}
+                      {modStatus(p) === "approved" && isLive(p) && (
+                        <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">Live now</span>
+                      )}
+                      {modStatus(p) === "approved" && !isLive(p) && new Date(p.endDate) < now && (
+                        <span className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">Ended</span>
+                      )}
+                      {modStatus(p) === "approved" && !isLive(p) && new Date(p.startDate) > now && (
+                        <span className="inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800">Scheduled</span>
                       )}
                     </div>
                   </div>

@@ -7,6 +7,9 @@ export async function connectDB(uri) {
     process.exit(1);
   }
   mongoose.set("strictQuery", true);
-  await mongoose.connect(u, { autoIndex: true });
+  await mongoose.connect(u, {
+    autoIndex: true,
+    serverSelectionTimeoutMS: 8000,
+  });
   console.log("✅ MongoDB connected");
 }

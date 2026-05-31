@@ -3,10 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "predev": "npx kill-port 5173",
-    "dev": "npx vite --port 5173",
-    "build": "npx vite build",
-    "preview": "npx vite preview --port 4173"
+    "setup": "node scripts/setup.mjs",
+    "seed": "npm run seed:all --prefix server",
+    "dev": "npm run dev:client",
+    "dev:client": "vite --port 5173",
+    "dev:server": "npm run dev --prefix server",
+    "dev:all": "concurrently -n web,api -c green,blue \"npm run dev:client\" \"npm run dev:server\"",
+    "build": "vite build",
+    "preview": "vite preview --port 4173",
+    "start:prod": "npm run build && cross-env NODE_ENV=production npm run start --prefix server"
   },
   "dependencies": {
     "framer-motion": "^12.23.12",
@@ -19,7 +24,8 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.0.0",
     "autoprefixer": "^10.4.0",
-    "nodemon": "^3.1.10",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
     "postcss": "^8.4.0",
     "sharp": "^0.34.5",
     "tailwindcss": "^3.3.0",

@@ -14,6 +14,7 @@ import {
 } from "react-icons/fa";
 import { useAuth } from "../../context/AuthContext";
 import { apiGet, ListingsAPI, VendorAPI, VendorOrdersAPI } from "../../lib/api";
+import VendorStockPanel from "../../components/vendor/VendorStockPanel";
 
 const money = (cents, cur = "AUD") =>
   new Intl.NumberFormat(undefined, { style: "currency", currency: cur }).format((Number(cents) || 0) / 100);
@@ -122,7 +123,9 @@ export default function VendorDashboardBackoffice() {
 
   const [recentProducts, setRecentProducts] = useState([]);
   const [activeItems, setActiveItems] = useState([]);
+  const [outOfStockItems, setOutOfStockItems] = useState([]);
   const [draftItems, setDraftItems] = useState([]);
+  const [stockLoading, setStockLoading] = useState(false);
 
   const [lowThreshold, setLowThreshold] = useState(5);
   const [orderSummary, setOrderSummary] = useState({
@@ -133,7 +136,6 @@ export default function VendorDashboardBackoffice() {
     completedRevenueCents: 0,
     statusBreakdown: { new: 0, accepted: 0, in_progress: 0, completed: 0, rejected: 0, cancelled: 0 },
   });
-  const [salesTrend, setSalesTrend] = useState([]);
   const [monthlySales, setMonthlySales] = useState([]);
   const [insight, setInsight] = useState({
     estimatedProfitCents: 0,
@@ -151,8 +153,8 @@ export default function VendorDashboardBackoffice() {
         const [draftRes, activeRes, outRes, unavailRes, archivedRes, allRes, profRes, ordersRes, analyticsRes] =
           await Promise.allSettled([
             ListingsAPI.list("", "draft", 1),
-            ListingsAPI.list("", "active", 1),
-            ListingsAPI.list("", "out_of_stock", 1),
+            ListingsAPI.list("", "active", 1, 100),
+            ListingsAPI.list("", "out_of_stock", 1, 100),
             ListingsAPI.list("", "unavailable", 1),
             ListingsAPI.list("", "archived", 1),
             ListingsAPI.list("", "", 1),
@@ -201,8 +203,10 @@ export default function VendorDashboardBackoffice() {
         });
 
         const activeArr = Array.isArray(activePayload.items) ? activePayload.items : [];
+        const outArr = Array.isArray(outPayload.items) ? outPayload.items : [];
         const draftArr = Array.isArray(draftPayload.items) ? draftPayload.items : [];
         setActiveItems(activeArr);
+        setOutOfStockItems(outArr);
         setDraftItems(draftArr);
 
         const allArr = Array.isArray(allPayload.items) ? allPayload.items : [];
@@ -230,34 +234,6 @@ export default function VendorDashboardBackoffice() {
           }
         );
 
-        const rawOrders = Array.isArray(ordersPayload?.items) ? ordersPayload.items : [];
-        const dayKeys = Array.from({ length: 7 }).map((_, idx) => {
-          const d = new Date();
-          d.setHours(0, 0, 0, 0);
-          d.setDate(d.getDate() - (6 - idx));
-          return d.toISOString().slice(0, 10);
-        });
-        const trendMap = new Map(dayKeys.map((k) => [k, { orders: 0, revenueCents: 0 }]));
-        for (const o of rawOrders) {
-          if (!o?.placedAt) continue;
-          const k = new Date(o.placedAt).toISOString().slice(0, 10);
-          if (!trendMap.has(k)) continue;
-          const cur = trendMap.get(k);
-          cur.orders += 1;
-          cur.revenueCents += Number(o.vendorTotalCents || 0);
-          trendMap.set(k, cur);
-        }
-        const trend = dayKeys.map((k) => {
-          const d = trendMap.get(k) || { orders: 0, revenueCents: 0 };
-          const dt = new Date(k);
-          return {
-            key: k,
-            label: dt.toLocaleDateString(undefined, { weekday: "short" }),
-            orders: d.orders,
-            revenueCents: d.revenueCents,
-          };
-        });
-        setSalesTrend(trend);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -310,6 +286,28 @@ export default function VendorDashboardBackoffice() {
 
   const vendorPublicId = user?.id || user?._id;
   const previewHref = vendorPublicId ? `/makers/${vendorPublicId}?tab=products` : "/makers";
+
+  const reloadStockLists = async () => {
+    setStockLoading(true);
+    try {
+      const toPayload = (r) => (r?.data?.data ?? r?.data ?? {});
+      const [activeRes, outRes] = await Promise.all([
+        ListingsAPI.list("", "active", 1, 100),
+        ListingsAPI.list("", "out_of_stock", 1, 100),
+      ]);
+      const activePayload = toPayload(activeRes);
+      const outPayload = toPayload(outRes);
+      setActiveItems(Array.isArray(activePayload.items) ? activePayload.items : []);
+      setOutOfStockItems(Array.isArray(outPayload.items) ? outPayload.items : []);
+      setPipelineCounts((prev) => ({
+        ...prev,
+        active: Number(activePayload?.pagination?.total ?? activePayload.items?.length ?? 0),
+        out_of_stock: Number(outPayload?.pagination?.total ?? outPayload.items?.length ?? 0),
+      }));
+    } finally {
+      setStockLoading(false);
+    }
+  };
 
   const actionCenter = useMemo(() => {
     const actions = [];
@@ -413,6 +411,13 @@ export default function VendorDashboardBackoffice() {
               Preview storefront
             </Link>
             <Link
+              to="#stock-management"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5 text-sm font-semibold text-indigo-800 shadow-sm hover:bg-indigo-100"
+            >
+              <FaCubes />
+              Manage stock
+            </Link>
+            <Link
               to="/vendor/listings/new"
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
             >
@@ -426,9 +431,20 @@ export default function VendorDashboardBackoffice() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KPI label="Drafts" value={pipelineCounts.draft} icon={<FaList />} />
         <KPI label="Active" value={pipelineCounts.active} icon={<FaChartLine />} />
-        <KPI label="Out of stock" value={pipelineCounts.out_of_stock} icon={<FaCubes />} />
+        <Link to="#stock-management" className="block transition hover:opacity-90">
+          <KPI label="Out of stock" value={pipelineCounts.out_of_stock} icon={<FaCubes />} />
+        </Link>
         <KPI label="On sale (page 1)" value={onSaleCount} icon={<FaPercent />} />
       </div>
+
+      <VendorStockPanel
+        activeItems={activeItems}
+        outOfStockItems={outOfStockItems}
+        lowThreshold={lowThreshold}
+        loading={loading || stockLoading}
+        onReload={reloadStockLists}
+        compact
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card
@@ -481,7 +497,7 @@ export default function VendorDashboardBackoffice() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card title="Sales & orders" action={<Link to="/vendor/orders" className="text-xs font-semibold text-indigo-600 hover:underline">Open</Link>}>
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
@@ -510,41 +526,6 @@ export default function VendorDashboardBackoffice() {
               <div className="mt-0.5 text-[11px] text-gray-500">Includes pending / in-progress — not only fulfilled sales</div>
               <div className="mt-1 text-lg font-bold text-gray-900">{money(orderSummary.revenueCents || 0)}</div>
             </div>
-          </div>
-        </Card>
-
-        <Card title="Sales trends (7 days)" action={<span className="text-xs font-semibold text-gray-500">Recent activity</span>}>
-          <div className="mb-4 space-y-2">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Order count</div>
-            {salesTrend.map((d) => {
-              const maxOrders = Math.max(1, ...salesTrend.map((x) => x.orders || 0));
-              const w = ((d.orders || 0) / maxOrders) * 100;
-              return (
-                <div key={`o-${d.key}`} className="grid grid-cols-[46px_1fr_auto] items-center gap-2 text-xs">
-                  <div className="font-semibold text-gray-600">{d.label}</div>
-                  <div className="h-2 overflow-hidden rounded-full bg-gray-100">
-                    <div className="h-full rounded-full bg-indigo-500" style={{ width: `${w}%` }} />
-                  </div>
-                  <div className="text-gray-700">{d.orders} orders</div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="space-y-2 border-t border-gray-100 pt-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Your revenue</div>
-            {salesTrend.map((d) => {
-              const maxRev = Math.max(1, ...salesTrend.map((x) => Number(x.revenueCents || 0)));
-              const w = ((Number(d.revenueCents || 0)) / maxRev) * 100;
-              return (
-                <div key={`r-${d.key}`} className="grid grid-cols-[46px_1fr_auto] items-center gap-2 text-xs">
-                  <div className="font-semibold text-gray-600">{d.label}</div>
-                  <div className="h-2 overflow-hidden rounded-full bg-emerald-100">
-                    <div className="h-full rounded-full bg-emerald-600" style={{ width: `${w}%` }} />
-                  </div>
-                  <div className="text-gray-700">{money(d.revenueCents || 0)}</div>
-                </div>
-              );
-            })}
           </div>
         </Card>
 

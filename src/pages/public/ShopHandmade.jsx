@@ -14,7 +14,7 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { CategoriesAPI, PublicListingsAPI } from "../../lib/api";
-import { useCart } from "../../context/CartContext";
+import { useCart, isAtStockLimit, isOutOfStock } from "../../context/CartContext";
 import { useWishlist } from "../../context/WishlistContext";
 
 /** ───────────────────────────────────────────────────────────────────────────
@@ -37,7 +37,6 @@ export default function ShopHandmade() {
   const [min, setMin] = useState(0);
   const [max, setMax] = useState(500);
   const [rating, setRating] = useState(0);
-  const [colors, setColors] = useState([]);
   const [tags, setTags] = useState([]);
   const [inStock, setInStock] = useState(true);
   const [freeShipping, setFreeShipping] = useState(false);
@@ -48,12 +47,6 @@ export default function ShopHandmade() {
   const [nextPage, setNextPage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [firstLoad, setFirstLoad] = useState(true);
-
-  // Optional brand color swatches in the sidebar
-  const colorOptions = [
-    "#7c3aed","#ef4444","#f59e0b","#10b981","#06b6d4",
-    "#3b82f6","#a855f7","#f43f5e","#94a3b8","#0ea5e9",
-  ];
 
   useEffect(() => {
     fetchCategories().then(setCategories);
@@ -79,8 +72,8 @@ export default function ShopHandmade() {
 
   // When filters change, request page 1 so we don't show blank (state page may still be old)
   const filterKey = useMemo(
-    () => [search, sort, selectedCats.join(","), min, max, rating, colors.join(","), tags.join(","), inStock, freeShipping].join("|"),
-    [search, sort, selectedCats, min, max, rating, colors, tags, inStock, freeShipping]
+    () => [search, sort, selectedCats.join(","), min, max, rating, tags.join(","), inStock, freeShipping].join("|"),
+    [search, sort, selectedCats, min, max, rating, tags, inStock, freeShipping]
   );
   const prevFilterKeyRef = useRef(filterKey);
   const effectivePage = prevFilterKeyRef.current !== filterKey ? 1 : page;
@@ -93,7 +86,7 @@ export default function ShopHandmade() {
     setNextPage(null);
   }, [
     search, sort, selectedCats.join(","), min, max, rating,
-    colors.join(","), tags.join(","), inStock, freeShipping
+    tags.join(","), inStock, freeShipping
   ]);
 
   useEffect(() => {
@@ -109,7 +102,6 @@ export default function ShopHandmade() {
         min,
         max,
         rating,
-        colors,
         tags,
         inStock,
         freeShipping,
@@ -125,7 +117,7 @@ export default function ShopHandmade() {
     return () => { ignore = true; };
   }, [
     effectivePage, page, search, sort, selectedCats.join(","), min, max, rating,
-    colors.join(","), tags.join(","), inStock, freeShipping
+    tags.join(","), inStock, freeShipping
   ]);
 
   // Infinite scroll sentinel
@@ -139,7 +131,6 @@ export default function ShopHandmade() {
     setMin(0);
     setMax(500);
     setRating(0);
-    setColors([]);
     setTags([]);
     setInStock(true);
     setFreeShipping(false);
@@ -209,20 +200,6 @@ export default function ShopHandmade() {
                     <span className="text-sm">{r}+</span>
                   </div>
                 </button>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="Colors">
-            <div className="flex flex-wrap gap-2">
-              {colorOptions.map((c, i) => (
-                <button
-                  key={i}
-                  onClick={() => setColors((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c])}
-                  className={`w-6 h-6 rounded-full ring-2 ${colors.includes(c) ? "ring-purple-500" : "ring-gray-300"}`}
-                  style={{ background: c }}
-                  aria-label={`Color ${c}`}
-                />
               ))}
             </div>
           </Panel>
@@ -420,12 +397,17 @@ function ProductCard({ product }) {
   const { addItem, items, purchaseBlocked, vendorPurchaseMessage } = useCart();
   const { toggle: toggleWishlist, has: hasWishlist } = useWishlist();
   const to = `/product/${product.slug || product.id}`;
-  const priceCents = Math.round((product.price || 0) * 100);
+  const effectiveUnitPrice = product.salePrice != null ? product.salePrice : product.price;
+  const priceCents = Math.round((effectiveUnitPrice || 0) * 100);
   const cartEntry = items?.find(
     (i) => i.listingId === product.id || (product.slug && i.slug === product.slug)
   );
   const cartQty = Number(cartEntry?.quantity || 0);
   const inCart = cartQty > 0;
+  const stockQty = Math.max(0, Number(product.stockQty) || 0);
+  const outOfStock = isOutOfStock(stockQty);
+  const atMaxInCart = isAtStockLimit(cartEntry, stockQty);
+  const cannotAddMore = purchaseBlocked || outOfStock || atMaxInCart;
   const addToCart = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -435,6 +417,7 @@ function ProductCard({ product }) {
       title: product.name,
       priceCents,
       quantity: 1,
+      stockQty,
       imageUrl: product.images?.[0]?.url || "",
     });
   };
@@ -479,15 +462,28 @@ function ProductCard({ product }) {
           </button>
           <button
             type="button"
-            disabled={purchaseBlocked}
+            disabled={cannotAddMore}
             className={`flex items-center gap-1 rounded-lg p-2 text-white transition ${
-              purchaseBlocked
+              cannotAddMore
                 ? "cursor-not-allowed bg-gray-400"
                 : inCart
                   ? "bg-emerald-600 hover:bg-emerald-700"
                   : "bg-purple-600 hover:bg-purple-700"
             }`}
-            aria-label={purchaseBlocked ? vendorPurchaseMessage : inCart ? "Added to cart" : "Add to cart"}
+            aria-label={
+              purchaseBlocked
+                ? vendorPurchaseMessage
+                : outOfStock
+                  ? "Out of stock"
+                  : atMaxInCart
+                    ? `Maximum ${stockQty} in cart`
+                    : inCart
+                      ? "Added to cart"
+                      : "Add to cart"
+            }
+            title={
+              atMaxInCart ? `Only ${stockQty} available — already in your cart` : outOfStock ? "Out of stock" : undefined
+            }
             onClick={addToCart}
             title={purchaseBlocked ? vendorPurchaseMessage : inCart ? "Added" : "Add to cart"}
           >
@@ -525,12 +521,17 @@ function ProductRow({ product }) {
   const { addItem, items, purchaseBlocked, vendorPurchaseMessage } = useCart();
   const { toggle: toggleWishlist, has: hasWishlist } = useWishlist();
   const to = `/product/${product.slug || product.id}`;
-  const priceCents = Math.round((product.price || 0) * 100);
+  const effectiveUnitPrice = product.salePrice != null ? product.salePrice : product.price;
+  const priceCents = Math.round((effectiveUnitPrice || 0) * 100);
   const cartEntry = items?.find(
     (i) => i.listingId === product.id || (product.slug && i.slug === product.slug)
   );
   const cartQty = Number(cartEntry?.quantity || 0);
   const inCart = cartQty > 0;
+  const stockQty = Math.max(0, Number(product.stockQty) || 0);
+  const outOfStock = isOutOfStock(stockQty);
+  const atMaxInCart = isAtStockLimit(cartEntry, stockQty);
+  const cannotAddMore = purchaseBlocked || outOfStock || atMaxInCart;
   const addToCart = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -540,6 +541,7 @@ function ProductRow({ product }) {
       title: product.name,
       priceCents,
       quantity: 1,
+      stockQty,
       imageUrl: product.images?.[0]?.url || "",
     });
   };
@@ -592,10 +594,18 @@ function ProductRow({ product }) {
               </button>
               <button
                 type="button"
-                disabled={purchaseBlocked}
-                title={purchaseBlocked ? vendorPurchaseMessage : undefined}
-                className={`flex items-center gap-2 rounded-lg px-3 py-2 font-semibold text-white transition ${
+                disabled={cannotAddMore}
+                title={
                   purchaseBlocked
+                    ? vendorPurchaseMessage
+                    : outOfStock
+                      ? "Out of stock"
+                      : atMaxInCart
+                        ? `Only ${stockQty} available — already in your cart`
+                        : undefined
+                }
+                className={`flex items-center gap-2 rounded-lg px-3 py-2 font-semibold text-white transition ${
+                  cannotAddMore
                     ? "cursor-not-allowed bg-gray-400"
                     : inCart
                       ? "bg-emerald-600 hover:bg-emerald-700"
@@ -604,7 +614,15 @@ function ProductRow({ product }) {
                 onClick={addToCart}
               >
                 {inCart ? <Check className="h-4 w-4" /> : <ShoppingCart className="h-4 w-4" />}{" "}
-                {purchaseBlocked ? "N/A" : inCart ? `Added${cartQty > 1 ? ` (${cartQty})` : ""}` : "Add"}
+                {purchaseBlocked
+                  ? "N/A"
+                  : outOfStock
+                    ? "Out of stock"
+                    : atMaxInCart
+                      ? `Max (${cartQty}/${stockQty})`
+                      : inCart
+                        ? `Added${cartQty > 1 ? ` (${cartQty})` : ""}`
+                        : "Add"}
               </button>
             </div>
           </div>
@@ -717,16 +735,21 @@ async function fetchProducts(query) {
         p?.images?.[0]?.url ||
         "";
 
+      const livePriceCents = Number(p?.pricing?.priceCents || 0);
+      const compareAtCents = Number(p?.pricing?.compareAtCents || 0);
+      const hasSale = compareAtCents > 0 && compareAtCents > livePriceCents;
+
       return {
         id: p._id || p.id || p.seo?.slug || Math.random().toString(36).slice(2),
         slug: p.seo?.slug || p._id?.toString?.() || p.id,
         name: p.title || "Untitled",
-        price: (p?.pricing?.priceCents || 0) / 100,
-        salePrice: null,
+        price: (hasSale ? compareAtCents : livePriceCents) / 100,
+        salePrice: hasSale ? livePriceCents / 100 : null,
         rating: p.ratingAvg || 0,
         reviewCount: p.ratingsCount || 0,
         images: img ? [{ url: img }] : [],
-        badges: p.inventory?.status === "out_of_stock" ? ["Out of stock"] : [],
+        stockQty: Math.max(0, Number(p?.inventory?.stockQty) || 0),
+        badges: p.inventory?.status === "out_of_stock" ? ["Out of stock"] : hasSale ? ["Sale"] : [],
         maker: p.vendor?.businessName || p.vendor?.displayName || p.vendor?.name || "Artisan",
         vendorLogo: p.vendor?.logoUrl || p.vendor?.avatarUrl || "",
         tags: p.tags || [],

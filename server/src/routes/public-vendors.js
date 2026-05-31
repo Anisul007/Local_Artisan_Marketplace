@@ -7,6 +7,64 @@ import Review from "../models/Review.js";
 
 const router = Router();
 
+// GET /api/vendors — featured vendors for marketing pages
+router.get("/", async (req, res, next) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit || "12", 10) || 12, 1), 50);
+    const users = await User.find({ role: "vendor", isActive: { $ne: false } })
+      .select("_id firstName lastName")
+      .sort({ createdAt: -1 })
+      .limit(limit * 3)
+      .lean();
+
+    const ids = users.map((u) => u._id);
+    if (!ids.length) {
+      return res.json({ ok: true, data: { items: [] } });
+    }
+
+    const [profiles, productCounts] = await Promise.all([
+      VendorProfile.find({ user: { $in: ids } }).lean(),
+      Listing.aggregate([
+        {
+          $match: {
+            vendor: { $in: ids },
+            "inventory.status": "active",
+            $or: [{ "moderation.status": "approved" }, { moderation: { $exists: false } }],
+          },
+        },
+        { $group: { _id: "$vendor", products: { $sum: 1 } } },
+      ]),
+    ]);
+
+    const profileMap = Object.fromEntries(profiles.map((p) => [p.user.toString(), p]));
+    const countMap = Object.fromEntries(productCounts.map((c) => [c._id.toString(), c.products]));
+
+    const items = users
+      .map((u) => {
+        const id = u._id.toString();
+        const profile = profileMap[id];
+        const businessName =
+          profile?.businessName || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Vendor";
+        return {
+          id,
+          businessName,
+          logoUrl: profile?.logoUrl || "",
+          bio: profile?.bio || "",
+          website: profile?.website || "",
+          primaryCategories: profile?.primaryCategories || [],
+          address: profile?.address || {},
+          stats: { products: countMap[id] || 0 },
+        };
+      })
+      .sort((a, b) => Number(b.stats.products) - Number(a.stats.products))
+      .slice(0, limit);
+
+    return res.json({ ok: true, data: { items } });
+  } catch (e) {
+    next(e);
+  }
+});
+
 // GET /api/vendors/:id — public vendor storefront profile
 router.get("/:id", async (req, res, next) => {
   try {
@@ -74,13 +132,13 @@ router.get("/:id/reviews", async (req, res, next) => {
     );
 
     const [items, total] = await Promise.all([
-      Review.find({ productId: { $in: idSet } })
+      Review.find({ productId: { $in: idSet }, verifiedPurchase: true, moderationStatus: { $ne: "rejected" } })
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
         .populate("customerId", "firstName")
         .lean(),
-      Review.countDocuments({ productId: { $in: idSet } }),
+      Review.countDocuments({ productId: { $in: idSet }, verifiedPurchase: true, moderationStatus: { $ne: "rejected" } }),
     ]);
 
     const safe = items.map((r) => {

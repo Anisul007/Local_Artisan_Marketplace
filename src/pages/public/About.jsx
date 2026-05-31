@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   FaUsers,
@@ -11,6 +13,7 @@ import {
   FaPaintBrush,
   FaShippingFast,
 } from "react-icons/fa";
+import { loadFeaturedVendors, vendorCardBlurb } from "../../lib/featuredVendors";
 
 const brand = {
   purple: "#4b0082",
@@ -18,7 +21,26 @@ const brand = {
   yellow: "#ffd166",
 };
 
+const PLACEHOLDER = "/images/placeholder.svg";
+
 export default function About() {
+  const [vendors, setVendors] = useState([]);
+  const [vendorsLoading, setVendorsLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadFeaturedVendors(6)
+      .then((items) => {
+        if (!cancelled) setVendors(items);
+      })
+      .finally(() => {
+        if (!cancelled) setVendorsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <main className="bg-white">
       {/* Hero Section */}
@@ -193,30 +215,70 @@ export default function About() {
         </div>
       </section>
 
-      {/* Meet the Makers */}
+      {/* Meet the Vendors */}
       <section className="py-16 bg-gradient-to-r from-[#4b0082]/90 to-[#ff6600]/90 text-white">
         <div className="max-w-6xl mx-auto px-6 text-center">
-          <h2 className="text-3xl font-bold mb-12">Meet the Vendors</h2>
+          <h2 className="text-3xl font-bold mb-3">Meet the Vendors</h2>
+          <p className="mb-10 max-w-2xl mx-auto text-sm text-white/90">
+            Click a maker to view their full profile — bio, products, and customer reviews.
+          </p>
           <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-8">
-            {[1, 2, 3, 4, 5, 6].map((m) => (
-              <motion.div
-                key={m}
-                whileHover={{ scale: 1.05 }}
-                className="rounded-2xl bg-white/10 backdrop-blur-sm p-6 shadow-sm"
-              >
-                <img
-                  src={`/images/m${m}.jpg`}
-                  alt={`Vendor ${m}`}
-                  className="w-full h-40 object-cover rounded-xl mb-4"
-                />
-                <h3 className="text-lg font-bold">Artisan {m}</h3>
-                <p className="text-sm opacity-80">
-                  Specialist in handmade crafts, weaving culture into every
-                  piece.
-                </p>
-              </motion.div>
-            ))}
+            {vendorsLoading
+              ? [1, 2, 3, 4, 5, 6].map((i) => (
+                  <div key={i} className="rounded-2xl bg-white/10 backdrop-blur-sm p-6 animate-pulse">
+                    <div className="w-full h-40 bg-white/20 rounded-xl mb-4" />
+                    <div className="h-5 bg-white/20 rounded w-2/3 mx-auto" />
+                    <div className="h-3 bg-white/20 rounded w-full mt-3" />
+                  </div>
+                ))
+              : vendors.length === 0
+              ? (
+                  <p className="col-span-full text-white/90">
+                    Featured makers will appear here once vendors publish active listings.{" "}
+                    <Link to="/for-vendors" className="underline font-semibold">
+                      Become a vendor
+                    </Link>
+                  </p>
+                )
+              : vendors.map((v, i) => (
+                  <motion.div key={v.id} whileHover={{ scale: 1.03 }} initial={{ opacity: 0, y: 16 }} whileInView={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
+                    <Link
+                      to={`/makers/${v.id}?tab=about`}
+                      className="block rounded-2xl bg-white/10 backdrop-blur-sm p-6 shadow-sm text-left hover:bg-white/20 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    >
+                      <div className="w-full h-40 rounded-xl mb-4 overflow-hidden bg-white/20 flex items-center justify-center">
+                        <img
+                          src={v.logoUrl || PLACEHOLDER}
+                          alt={v.businessName || "Vendor"}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.onerror = null;
+                            e.currentTarget.src = PLACEHOLDER;
+                          }}
+                        />
+                      </div>
+                      <h3 className="text-lg font-bold text-center">{v.businessName || "Vendor"}</h3>
+                      {v.primaryCategories?.[0] && (
+                        <p className="text-xs text-center text-white/70 mt-1 capitalize">
+                          {v.primaryCategories[0].replace(/-/g, " ")}
+                        </p>
+                      )}
+                      <p className="text-sm opacity-90 mt-3 text-center line-clamp-3">{vendorCardBlurb(v)}</p>
+                      <p className="mt-4 text-center text-sm font-semibold underline decoration-white/50">
+                        View profile →
+                      </p>
+                    </Link>
+                  </motion.div>
+                ))}
           </div>
+          {vendors.length > 0 && (
+            <Link
+              to="/for-vendors"
+              className="mt-10 inline-block rounded-xl bg-white/15 px-5 py-2.5 text-sm font-semibold hover:bg-white/25 transition"
+            >
+              Explore all vendor storefronts
+            </Link>
+          )}
         </div>
       </section>
 

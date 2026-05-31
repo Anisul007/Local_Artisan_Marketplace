@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
+import { ShieldAlert } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
 import { PublicListingsAPI, PublicVendorsAPI } from "../../lib/api";
 
 const PLACEHOLDER = "/images/placeholder.svg";
@@ -18,6 +20,7 @@ function Badge({ children }) {
 
 export default function VendorStorefront() {
   const { vendorId } = useParams();
+  const { user } = useAuth();
   const [sp, setSp] = useSearchParams();
   const tab = sp.get("tab") || "products"; // products | reviews | about
 
@@ -141,6 +144,18 @@ export default function VendorStorefront() {
                 <a className="text-sm font-semibold text-purple-600 hover:underline" href={vendor.website} target="_blank" rel="noreferrer">
                   Website
                 </a>
+              )}
+              {user?.role !== "vendor" && vendorId && (
+                <Link
+                  to={
+                    user
+                      ? `/account/report-abuse?targetType=vendor&targetId=${vendorId}&targetLabel=${encodeURIComponent(businessName)}`
+                      : `/login?next=${encodeURIComponent(`/account/report-abuse?targetType=vendor&targetId=${vendorId}&targetLabel=${encodeURIComponent(businessName)}`)}`
+                  }
+                  className="inline-flex items-center gap-1 text-sm font-semibold text-rose-700 hover:underline"
+                >
+                  <ShieldAlert className="w-4 h-4" /> Report seller
+                </Link>
               )}
             </div>
           </div>

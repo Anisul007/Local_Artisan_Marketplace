@@ -4,6 +4,7 @@ import Listing from "../models/Listing.js";
 import Category from "../models/Category.js";
 import User from "../models/User.js";
 import VendorProfile from "../models/VendorProfile.js";
+import { enrichListingsWithPromotions } from "../utils/promotion-utils.js";
 
 const router = Router();
 
@@ -11,7 +12,18 @@ const router = Router();
 async function attachVendorInfo(items) {
   if (!items || items.length === 0) return items;
   const list = Array.isArray(items) ? items : [items];
-  const vendorIds = [...new Set(list.map((i) => i.vendor).filter(Boolean))];
+  const vendorIds = [
+    ...new Set(
+      list
+        .map((i) => {
+          const v = i.vendor;
+          if (!v) return null;
+          if (typeof v === "object" && v._id) return v._id.toString();
+          return v.toString?.() || String(v);
+        })
+        .filter(Boolean)
+    ),
+  ];
   if (vendorIds.length === 0) return items;
 
   const [users, profiles] = await Promise.all([
@@ -56,7 +68,9 @@ router.get("/", async (req, res, next) => {
 
     const where = {
       "inventory.status": "active",
-      $or: [{ "moderation.status": "approved" }, { moderation: { $exists: false } }],
+      $and: [
+        { $or: [{ "moderation.status": "approved" }, { moderation: { $exists: false } }] },
+      ],
     };
 
     if (vendor && String(vendor).trim()) {
@@ -65,10 +79,13 @@ router.get("/", async (req, res, next) => {
     }
 
     if (q && String(q).trim()) {
-      where.$or = [
-        { title: { $regex: String(q).trim(), $options: "i" } },
-        { description: { $regex: String(q).trim(), $options: "i" } },
-      ];
+      const term = String(q).trim();
+      where.$and.push({
+        $or: [
+          { title: { $regex: term, $options: "i" } },
+          { description: { $regex: term, $options: "i" } },
+        ],
+      });
     }
 
     if (category && String(category).trim()) {
@@ -120,7 +137,8 @@ router.get("/", async (req, res, next) => {
       Listing.find(where).sort(sortOption).skip((pg - 1) * lim).limit(lim).lean(),
       Listing.countDocuments(where),
     ]);
-    const items = await attachVendorInfo(rawItems);
+    let items = await enrichListingsWithPromotions(rawItems);
+    items = await attachVendorInfo(items);
 
     res.json({ ok: true, data: { items, page: pg, pages: Math.ceil(total / lim), total } });
   } catch (e) { next(e); }
@@ -140,7 +158,8 @@ router.get("/:id", async (req, res, next) => {
 
     let row = await Listing.findOne(query).lean();
     if (!row) return res.status(404).json({ message: "Not found" });
-    const [enriched] = await attachVendorInfo([row]);
+    let [enriched] = await enrichListingsWithPromotions([row]);
+    enriched = (await attachVendorInfo([enriched]))[0];
     res.json({ ok: true, data: enriched });
   } catch (e) { next(e); }
 });

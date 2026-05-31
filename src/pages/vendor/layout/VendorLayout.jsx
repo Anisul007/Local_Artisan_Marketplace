@@ -12,6 +12,8 @@ import {
   FaCubes,
   FaStar,
   FaChartLine,
+  FaShieldAlt,
+  FaBell,
 } from "react-icons/fa";
 import { useAuth } from "../../../context/AuthContext";
 import { VendorAPI, VendorOrdersAPI } from "../../../lib/api";
@@ -85,6 +87,7 @@ export default function VendorLayout() {
   const [open, setOpen] = useState(false);
   const [profile, setProfile] = useState(null);
   const [ordersAttentionCount, setOrdersAttentionCount] = useState(0);
+  const [notificationsUnread, setNotificationsUnread] = useState(0);
   const { user } = useAuth();
 
   const fetchProfile = () => {
@@ -117,6 +120,8 @@ export default function VendorLayout() {
           const d = r?.data?.data ?? r?.data ?? {};
           const n = Number(d.ordersNeedingAttention);
           setOrdersAttentionCount(Number.isFinite(n) ? n : 0);
+          const unread = Number(d.unreadTotal);
+          setNotificationsUnread(Number.isFinite(unread) ? unread : 0);
         })
         .catch(() => {});
     };
@@ -124,10 +129,12 @@ export default function VendorLayout() {
     const id = setInterval(tick, 60_000);
     const onOrdersChanged = () => tick();
     window.addEventListener("vendor-orders-changed", onOrdersChanged);
+    window.addEventListener("vendor-notifications-changed", onOrdersChanged);
     return () => {
       cancelled = true;
       clearInterval(id);
       window.removeEventListener("vendor-orders-changed", onOrdersChanged);
+      window.removeEventListener("vendor-notifications-changed", onOrdersChanged);
     };
   }, [user]);
 
@@ -153,6 +160,18 @@ export default function VendorLayout() {
           </Link>
 
           <div className="ml-auto flex items-center gap-2">
+            <Link
+              to="/vendor/notifications"
+              className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              title="Notifications"
+            >
+              <FaBell />
+              {notificationsUnread > 0 ? (
+                <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+                  {notificationsUnread > 99 ? "99+" : notificationsUnread}
+                </span>
+              ) : null}
+            </Link>
             <Link
               to="/vendor/listings/new"
               className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
@@ -189,6 +208,9 @@ export default function VendorLayout() {
                 <NavItem to="/vendor/dashboard" icon={<FaTachometerAlt />}>
                   Dashboard
                 </NavItem>
+                <NavItem to="/vendor/notifications" icon={<FaBell />} badge={notificationsUnread}>
+                  Notifications
+                </NavItem>
               </NavGroup>
               <NavGroup label="Selling">
                 <NavItem to="/vendor/listings" icon={<FaBoxOpen />}>My Listings</NavItem>
@@ -202,6 +224,7 @@ export default function VendorLayout() {
               <NavGroup label="Account">
                 <NavItem to="/vendor/profile" icon={<FaUserCircle />}>Business Profile</NavItem>
                 <NavItem to="/vendor/reviews" icon={<FaStar />}>Reviews</NavItem>
+                <NavItem to="/vendor/report-abuse" icon={<FaShieldAlt />}>Report abuse</NavItem>
               </NavGroup>
             </nav>
           </div>

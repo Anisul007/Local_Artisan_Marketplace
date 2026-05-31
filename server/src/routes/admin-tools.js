@@ -14,7 +14,10 @@ import PlatformSetting from "../models/PlatformSetting.js";
 import PaymentTransaction from "../models/PaymentTransaction.js";
 import VendorProfile from "../models/VendorProfile.js";
 import { sendMail } from "../utils/email.js";
+import { flagRefundForOrder } from "../utils/payment-refund.js";
+import { releaseOrderInventoryIfNeeded } from "../utils/order-inventory.js";
 import { notifyContactResolved } from "./contact-messages.js";
+import { buildPlatformReportPdf } from "../utils/marketplace-report-pdf.js";
 
 const router = Router();
 
@@ -37,44 +40,6 @@ function explicitIsActive(doc) {
   return { ...doc, isActive: doc.isActive !== false };
 }
 
-function simplePdfBuffer(title, lines = []) {
-  const toPdfText = (v) =>
-    String(v ?? "")
-      .replace(/[^\x20-\x7E]/g, " ")
-      .replace(/\\/g, "\\\\")
-      .replace(/\(/g, "\\(")
-      .replace(/\)/g, "\\)");
-  const allLines = [title, "", ...lines].slice(0, 55);
-  const drawOps = ["BT", "/F1 11 Tf", "50 770 Td"];
-  for (let i = 0; i < allLines.length; i += 1) {
-    if (i > 0) drawOps.push("0 -14 Td");
-    drawOps.push(`(${toPdfText(allLines[i])}) Tj`);
-  }
-  drawOps.push("ET");
-  const stream = drawOps.join("\n");
-  const streamLength = Buffer.byteLength(stream, "binary");
-  const objects = [
-    "1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj",
-    "2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj",
-    "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj",
-    "4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj",
-    `5 0 obj << /Length ${streamLength} >> stream\n${stream}\nendstream endobj`,
-  ];
-  let pdf = "%PDF-1.4\n";
-  const offsets = [0];
-  for (const obj of objects) {
-    offsets.push(pdf.length);
-    pdf += `${obj}\n`;
-  }
-  const xrefStart = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (let i = 1; i < offsets.length; i++) {
-    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
-  }
-  pdf += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
-  return Buffer.from(pdf, "binary");
-}
-
 router.use(requireAuth, requireAdmin);
 
 /** Counts for admin sidebar notification dots */
@@ -90,6 +55,7 @@ router.get("/notifications/summary", async (_req, res, next) => {
       ordersNew,
       openOrderIssues,
       recentVendorOrderMessages,
+      pendingPromotions,
     ] = await Promise.all([
       Listing.countDocuments({ "moderation.status": "pending" }),
       ContactMessage.countDocuments({ status: "new" }),
@@ -104,11 +70,16 @@ router.get("/notifications/summary", async (_req, res, next) => {
       Order.countDocuments({
         messages: { $elemMatch: { fromRole: "vendor", sentAt: { $gte: weekAgo } } },
       }),
+      Promotion.countDocuments({
+        scope: { $ne: "global" },
+        $or: [{ "moderation.status": "pending" }, { moderation: { $exists: false } }],
+      }),
     ]);
     return res.json({
       ok: true,
       data: {
         pendingListings,
+        pendingPromotions,
         contactMessagesNew,
         abuseReportsNew,
         unverifiedCustomers,
@@ -209,6 +180,366 @@ router.get("/dashboard", async (req, res, next) => {
           monthlyOrders,
           monthlyListings,
         },
+      },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+const ANALYTICS_METRICS = ["users", "revenue", "orders", "listings"];
+
+function monthLabel(ym) {
+  if (!ym || ym.length < 7) return ym || "—";
+  const [y, m] = ym.split("-");
+  const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const mi = parseInt(m, 10) - 1;
+  return mi >= 0 && mi < 12 ? `${names[mi]} ${y}` : ym;
+}
+
+function pctChange(current, previous) {
+  const c = Number(current) || 0;
+  const p = Number(previous) || 0;
+  if (p === 0) return c > 0 ? 100 : 0;
+  return Math.round(((c - p) / p) * 1000) / 10;
+}
+
+router.get("/analytics/:metric", async (req, res, next) => {
+  try {
+    const metric = String(req.params.metric || "").trim().toLowerCase();
+    if (!ANALYTICS_METRICS.includes(metric)) {
+      return res.status(400).json({ ok: false, message: "metric must be users, revenue, orders, or listings" });
+    }
+
+    const monthsLimit = Math.min(Math.max(parseInt(req.query.months || "24", 10) || 24, 6), 36);
+
+    if (metric === "users") {
+      const [
+        totalCustomers,
+        totalVendors,
+        verifiedCustomers,
+        verifiedVendors,
+        monthlyUserGrowth,
+        recentSignups,
+      ] = await Promise.all([
+        User.countDocuments({ role: "customer" }),
+        User.countDocuments({ role: "vendor" }),
+        User.countDocuments({ role: "customer", isVerified: true }),
+        User.countDocuments({ role: "vendor", isVerified: true }),
+        User.aggregate([
+          { $match: { role: { $in: ["customer", "vendor"] } } },
+          {
+            $group: {
+              _id: { $substr: ["$createdAt", 0, 7] },
+              customers: { $sum: { $cond: [{ $eq: ["$role", "customer"] }, 1, 0] } },
+              vendors: { $sum: { $cond: [{ $eq: ["$role", "vendor"] }, 1, 0] } },
+            },
+          },
+          { $sort: { _id: 1 } },
+          {
+            $project: {
+              _id: 0,
+              month: "$_id",
+              customers: 1,
+              vendors: 1,
+              total: { $add: ["$customers", "$vendors"] },
+            },
+          },
+        ]),
+        User.find({ role: { $in: ["customer", "vendor"] } })
+          .sort({ createdAt: -1 })
+          .limit(30)
+          .select("firstName lastName email role isVerified createdAt")
+          .lean(),
+      ]);
+
+      const monthly = monthlyUserGrowth.slice(-monthsLimit);
+      let cumulative = 0;
+      const monthlyWithCumulative = monthly.map((row) => {
+        cumulative += Number(row.total || 0);
+        return { ...row, cumulative, monthLabel: monthLabel(row.month) };
+      });
+      const last = monthlyWithCumulative[monthlyWithCumulative.length - 1];
+      const prev = monthlyWithCumulative[monthlyWithCumulative.length - 2];
+
+      return res.json({
+        ok: true,
+        data: {
+          metric: "users",
+          title: "User growth",
+          summary: {
+            totalCustomers,
+            totalVendors,
+            totalMembers: totalCustomers + totalVendors,
+            verifiedCustomers,
+            unverifiedCustomers: totalCustomers - verifiedCustomers,
+            verifiedVendors,
+            unverifiedVendors: totalVendors - verifiedVendors,
+            lastMonthNew: last?.total ?? 0,
+            momGrowthPct: pctChange(last?.total, prev?.total),
+          },
+          monthly: monthlyWithCumulative,
+          recentSignups: recentSignups.map((u) => ({
+            id: u._id,
+            name: [u.firstName, u.lastName].filter(Boolean).join(" ").trim() || u.email,
+            email: u.email,
+            role: u.role,
+            isVerified: !!u.isVerified,
+            createdAt: u.createdAt,
+          })),
+        },
+      });
+    }
+
+    if (metric === "revenue") {
+      const [monthlyOrders, statusBreakdown, recentOrders, revenueTotal] = await Promise.all([
+        Order.aggregate([
+          {
+            $group: {
+              _id: { $substr: ["$createdAt", 0, 7] },
+              count: { $sum: 1 },
+              revenueCents: { $sum: "$totalCents" },
+              discountCents: { $sum: { $ifNull: ["$discountCents", 0] } },
+            },
+          },
+          { $sort: { _id: 1 } },
+          {
+            $project: {
+              _id: 0,
+              month: "$_id",
+              count: 1,
+              revenueCents: 1,
+              discountCents: 1,
+              avgOrderValueCents: {
+                $cond: [{ $gt: ["$count", 0] }, { $round: [{ $divide: ["$revenueCents", "$count"] }, 0] }, 0],
+              },
+            },
+          },
+        ]),
+        Order.aggregate([
+          {
+            $group: {
+              _id: "$status",
+              count: { $sum: 1 },
+              revenueCents: { $sum: "$totalCents" },
+            },
+          },
+          { $sort: { count: -1 } },
+          { $project: { _id: 0, status: "$_id", count: 1, revenueCents: 1 } },
+        ]),
+        Order.find()
+          .sort({ createdAt: -1 })
+          .limit(25)
+          .populate("customer", "firstName lastName email")
+          .select("orderNumber totalCents status currency createdAt customer")
+          .lean(),
+        Order.aggregate([{ $group: { _id: null, totalCents: { $sum: "$totalCents" }, count: { $sum: 1 } } }]),
+      ]);
+
+      const monthly = monthlyOrders.slice(-monthsLimit).map((row) => ({
+        ...row,
+        monthLabel: monthLabel(row.month),
+      }));
+      const totalRevenueCents = Number(revenueTotal[0]?.totalCents || 0);
+      const totalOrders = Number(revenueTotal[0]?.count || 0);
+      const bestMonth = [...monthly].sort((a, b) => (b.revenueCents || 0) - (a.revenueCents || 0))[0];
+      const last = monthly[monthly.length - 1];
+      const prev = monthly[monthly.length - 2];
+
+      return res.json({
+        ok: true,
+        data: {
+          metric: "revenue",
+          title: "Revenue trend",
+          summary: {
+            totalRevenueCents,
+            totalOrders,
+            avgOrderValueCents: totalOrders > 0 ? Math.round(totalRevenueCents / totalOrders) : 0,
+            bestMonth: bestMonth?.month,
+            bestMonthRevenueCents: bestMonth?.revenueCents ?? 0,
+            lastMonthRevenueCents: last?.revenueCents ?? 0,
+            momRevenueGrowthPct: pctChange(last?.revenueCents, prev?.revenueCents),
+          },
+          monthly,
+          statusBreakdown,
+          recentOrders: recentOrders.map((o) => ({
+            id: o._id,
+            orderNumber: o.orderNumber,
+            totalCents: o.totalCents,
+            status: o.status,
+            currency: o.currency,
+            createdAt: o.createdAt,
+            customerName: o.customer
+              ? [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" ").trim() || o.customer.email
+              : "Customer",
+          })),
+        },
+      });
+    }
+
+    if (metric === "orders") {
+      const [monthlyOrders, statusBreakdown, recentOrders, totalOrders] = await Promise.all([
+        Order.aggregate([
+          {
+            $group: {
+              _id: { $substr: ["$createdAt", 0, 7] },
+              count: { $sum: 1 },
+              revenueCents: { $sum: "$totalCents" },
+              completed: { $sum: { $cond: [{ $eq: ["$status", "completed"] }, 1, 0] } },
+              cancelled: { $sum: { $cond: [{ $in: ["$status", ["cancelled", "rejected"]] }, 1, 0] } },
+            },
+          },
+          { $sort: { _id: 1 } },
+          {
+            $project: {
+              _id: 0,
+              month: "$_id",
+              count: 1,
+              revenueCents: 1,
+              completed: 1,
+              cancelled: 1,
+              completionRate: {
+                $cond: [
+                  { $gt: ["$count", 0] },
+                  { $round: [{ $multiply: [{ $divide: ["$completed", "$count"] }, 100] }, 1] },
+                  0,
+                ],
+              },
+            },
+          },
+        ]),
+        Order.aggregate([
+          { $group: { _id: "$status", count: { $sum: 1 }, revenueCents: { $sum: "$totalCents" } } },
+          { $sort: { count: -1 } },
+          { $project: { _id: 0, status: "$_id", count: 1, revenueCents: 1 } },
+        ]),
+        Order.find()
+          .sort({ createdAt: -1 })
+          .limit(25)
+          .populate("customer", "firstName lastName email")
+          .select("orderNumber totalCents status currency createdAt customer items")
+          .lean(),
+        Order.countDocuments({}),
+      ]);
+
+      const monthly = monthlyOrders.slice(-monthsLimit).map((row) => ({
+        ...row,
+        monthLabel: monthLabel(row.month),
+      }));
+      const completed = statusBreakdown.find((s) => s.status === "completed")?.count ?? 0;
+      const cancelled = statusBreakdown
+        .filter((s) => s.status === "cancelled" || s.status === "rejected")
+        .reduce((n, s) => n + (s.count || 0), 0);
+      const last = monthly[monthly.length - 1];
+      const prev = monthly[monthly.length - 2];
+
+      return res.json({
+        ok: true,
+        data: {
+          metric: "orders",
+          title: "Order activity",
+          summary: {
+            totalOrders,
+            completedOrders: completed,
+            cancelledOrRejected: cancelled,
+            completionRatePct: totalOrders > 0 ? Math.round((completed / totalOrders) * 1000) / 10 : 0,
+            lastMonthOrders: last?.count ?? 0,
+            momOrderGrowthPct: pctChange(last?.count, prev?.count),
+          },
+          monthly,
+          statusBreakdown,
+          recentOrders: recentOrders.map((o) => ({
+            id: o._id,
+            orderNumber: o.orderNumber,
+            totalCents: o.totalCents,
+            status: o.status,
+            itemCount: Array.isArray(o.items) ? o.items.length : 0,
+            currency: o.currency,
+            createdAt: o.createdAt,
+            customerName: o.customer
+              ? [o.customer.firstName, o.customer.lastName].filter(Boolean).join(" ").trim() || o.customer.email
+              : "Customer",
+          })),
+        },
+      });
+    }
+
+    /** listings */
+    const [
+      totalListings,
+      activeListings,
+      pendingListings,
+      draftListings,
+      monthlyListings,
+      moderationBreakdown,
+      inventoryBreakdown,
+      recentListings,
+    ] = await Promise.all([
+      Listing.countDocuments({}),
+      Listing.countDocuments({
+        "inventory.status": "active",
+        archivedAt: { $in: [null, undefined] },
+      }),
+      Listing.countDocuments({ "moderation.status": "pending" }),
+      Listing.countDocuments({ "inventory.status": "draft" }),
+      Listing.aggregate([
+        { $group: { _id: { $substr: ["$createdAt", 0, 7] }, count: { $sum: 1 } } },
+        { $sort: { _id: 1 } },
+        { $project: { _id: 0, month: "$_id", count: 1 } },
+      ]),
+      Listing.aggregate([
+        { $group: { _id: "$moderation.status", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $project: { _id: 0, status: "$_id", count: 1 } },
+      ]),
+      Listing.aggregate([
+        { $group: { _id: "$inventory.status", count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $project: { _id: 0, status: "$_id", count: 1 } },
+      ]),
+      Listing.find()
+        .sort({ createdAt: -1 })
+        .limit(25)
+        .populate("vendor", "firstName lastName email")
+        .select("title seo moderation inventory createdAt vendor")
+        .lean(),
+    ]);
+
+    const monthly = monthlyListings.slice(-monthsLimit).map((row) => ({
+      ...row,
+      monthLabel: monthLabel(row.month),
+    }));
+    const last = monthly[monthly.length - 1];
+    const prev = monthly[monthly.length - 2];
+
+    return res.json({
+      ok: true,
+      data: {
+        metric: "listings",
+        title: "Listing catalog growth",
+        summary: {
+          totalListings,
+          activeListings,
+          pendingListings,
+          draftListings,
+          approvedListings: moderationBreakdown.find((m) => m.status === "approved")?.count ?? 0,
+          lastMonthNew: last?.count ?? 0,
+          momListingGrowthPct: pctChange(last?.count, prev?.count),
+        },
+        monthly,
+        moderationBreakdown,
+        inventoryBreakdown,
+        recentListings: recentListings.map((l) => ({
+          id: l._id,
+          title: l.title,
+          slug: l.seo?.slug,
+          moderationStatus: l.moderation?.status,
+          inventoryStatus: l.inventory?.status,
+          vendorName: l.vendor
+            ? [l.vendor.firstName, l.vendor.lastName].filter(Boolean).join(" ").trim() || l.vendor.email
+            : "Vendor",
+          createdAt: l.createdAt,
+        })),
       },
     });
   } catch (e) {
@@ -895,6 +1226,10 @@ router.patch("/orders/:id/status", async (req, res, next) => {
     order.statusHistory = Array.isArray(order.statusHistory) ? order.statusHistory : [];
     order.statusHistory.push({ from: prev, to: status, actorRole: "system", actor: req.user.id, note: "Admin override" });
     await order.save();
+    await releaseOrderInventoryIfNeeded(order, status);
+    if (["cancelled", "rejected"].includes(status)) {
+      await flagRefundForOrder(order._id, `Order marked ${status} by admin`);
+    }
     return res.json({ ok: true, data: order.toObject() });
   } catch (e) {
     next(e);
@@ -912,6 +1247,8 @@ router.patch("/orders/:id/cancel", async (req, res, next) => {
     order.statusHistory = Array.isArray(order.statusHistory) ? order.statusHistory : [];
     order.statusHistory.push({ from: prev, to: "cancelled", actorRole: "system", actor: req.user.id, note: "Admin cancelled order" });
     await order.save();
+    await releaseOrderInventoryIfNeeded(order, "cancelled");
+    await flagRefundForOrder(order._id, "Order cancelled by admin");
     return res.json({ ok: true, message: "Order cancelled", data: order.toObject() });
   } catch (e) {
     next(e);
@@ -941,8 +1278,28 @@ router.patch("/orders/:id/return", async (req, res, next) => {
 router.get("/payments", async (req, res, next) => {
   try {
     const status = String(req.query.status || "").trim();
-    const where = status ? { status } : {};
-    const items = await PaymentTransaction.find(where).sort({ createdAt: -1 }).limit(500).populate("order", "orderNumber").populate("customer", "email firstName lastName").lean();
+    const filter = String(req.query.filter || "needs_refund").trim();
+    let where = {};
+
+    if (filter === "needs_refund") {
+      const refundOrderIds = await Order.find({ status: { $in: ["cancelled", "rejected"] } }).select("_id").lean();
+      const orderIds = refundOrderIds.map((o) => o._id);
+      where = {
+        $or: [
+          { refundStatus: { $in: ["requested", "approved"] } },
+          { order: { $in: orderIds }, status: "paid", refundStatus: { $nin: ["processed"] } },
+        ],
+      };
+    } else if (status) {
+      where = { status };
+    }
+
+    const items = await PaymentTransaction.find(where)
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .populate("order", "orderNumber status")
+      .populate("customer", "email firstName lastName")
+      .lean();
     return res.json({ ok: true, data: { items } });
   } catch (e) {
     next(e);
@@ -1023,6 +1380,54 @@ router.patch("/reviews/:id/moderate", async (req, res, next) => {
   }
 });
 
+router.get("/promotions/vendor", async (req, res, next) => {
+  try {
+    const status = String(req.query.status || "pending").trim();
+    const where = { scope: { $ne: "global" } };
+    if (status === "pending") {
+      where.$or = [{ "moderation.status": "pending" }, { moderation: { $exists: false } }];
+    } else if (status) {
+      where["moderation.status"] = status;
+    }
+    const items = await Promotion.find(where)
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .populate("vendor", "firstName lastName email")
+      .lean();
+    return res.json({ ok: true, data: { items } });
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.patch("/promotions/vendor/:id/moderate", async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ ok: false, message: "Invalid promotion id" });
+    const decision = String(req.body?.decision || "").trim().toLowerCase();
+    const reviewNote = String(req.body?.reviewNote || req.body?.note || "").trim();
+    if (!["approve", "reject"].includes(decision)) {
+      return res.status(400).json({ ok: false, message: "decision must be approve or reject" });
+    }
+    const promo = await Promotion.findOne({ _id: id, scope: { $ne: "global" } });
+    if (!promo) return res.status(404).json({ ok: false, message: "Vendor promotion not found" });
+    promo.moderation = promo.moderation || {};
+    promo.moderation.status = decision === "approve" ? "approved" : "rejected";
+    promo.moderation.reviewedAt = new Date();
+    promo.moderation.reviewedBy = req.user.id;
+    promo.moderation.reviewNote = reviewNote;
+    promo.active = decision === "approve";
+    await promo.save();
+    return res.json({
+      ok: true,
+      message: decision === "approve" ? "Promotion approved and live on storefront" : "Promotion rejected",
+      data: promo.toObject(),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get("/promotions/global", async (_req, res, next) => {
   try {
     const items = await Promotion.find({ scope: "global" }).sort({ createdAt: -1 }).lean();
@@ -1054,6 +1459,7 @@ router.post("/promotions/global", async (req, res, next) => {
       featuredCampaign: !!req.body?.featuredCampaign,
       listingIds: [],
       minPurchaseCents: Number(req.body?.minPurchaseCents || 0),
+      moderation: { status: "approved", reviewNote: "" },
     });
     return res.status(201).json({ ok: true, data: doc });
   } catch (e) {
@@ -1127,14 +1533,16 @@ router.get("/reports/export", async (req, res, next) => {
     const totalRevenueCents = orders.reduce((s, o) => s + Number(o.totalCents || 0), 0);
 
     if (format === "pdf") {
-      const lines = [
-        `From: ${from.toISOString().slice(0, 10)} To: ${to.toISOString().slice(0, 10)}`,
-        `Users: ${users}`,
-        `Vendors: ${vendors}`,
-        `Orders: ${orders.length}`,
-        `Revenue: ${(totalRevenueCents / 100).toFixed(2)} AUD`,
-      ];
-      const pdf = simplePdfBuffer("Platform Report", lines);
+      const pdf = await buildPlatformReportPdf({
+        period: { from, to },
+        metrics: {
+          userCount: users,
+          vendorCount: vendors,
+          orderCount: orders.length,
+          revenueCents: totalRevenueCents,
+        },
+        orders,
+      });
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="platform-report-${Date.now()}.pdf"`);
       return res.send(pdf);

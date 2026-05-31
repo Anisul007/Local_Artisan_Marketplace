@@ -6,11 +6,7 @@ const HERO_SLIDES = [
   "/images/hero.webp",
   "https://images.unsplash.com/photo-1610701596007-11502861dcfa?w=1600&q=80",
   "https://images.unsplash.com/photo-1565193566173-7a0ee3dbe261?w=1600&q=80",
-  "https://images.unsplash.com/photo-1602874801006-4e411eaa806b?w=1600&q=80",
-  "https://images.unsplash.com/photo-1610701596061-2ecf227e85b2?w=1600&q=80",
-  "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1600&q=80",
-  "https://images.unsplash.com/photo-1582735689369-4fe89db7114c?w=1600&q=80",
-  "https://images.unsplash.com/photo-1607083206869-4c7672e72a8a?w=1600&q=80",
+  "https://images.unsplash.com/photo-1610701596061-2ecf227e85b2?w=1600&q=80"
 ];
 
 const SLIDE_DURATION_MS = 5000;

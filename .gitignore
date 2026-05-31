@@ -15,10 +15,13 @@ server/.env
 .env.production
 client/.env
 
-# Logs
-npm-debug.log*
-yarn-debug.log*
-pnpm-debug.log*
+# Local mail previews (MAIL_PREVIEW_DIR)
+server/.mail-previews/
+
+# OS / IDE
+Thumbs.db
+Desktop.ini
+*.log
 
 # Editor junk
 .vscode/

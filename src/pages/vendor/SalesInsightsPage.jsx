@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import SimpleLineChart from "../../components/vendor/SimpleLineChart";
 import { API, VendorOrdersAPI } from "../../lib/api";
 
 const money = (cents, currency = "AUD") =>
@@ -15,6 +16,7 @@ export default function SalesInsightsPage() {
     estimatedProfitCents: 0,
     monthlySales: [],
     bestSellers: [],
+    weeklyTrend: [],
   });
   const [issues, setIssues] = useState([]);
 
@@ -47,6 +49,23 @@ export default function SalesInsightsPage() {
   const maxRevenue = useMemo(
     () => Math.max(1, ...(analytics?.monthlySales || []).map((m) => Number(m?.revenueCents || 0))),
     [analytics]
+  );
+
+  const orderSeries = useMemo(
+    () =>
+      (analytics?.weeklyTrend || []).map((d) => ({
+        label: d.label,
+        value: Number(d.orders) || 0,
+      })),
+    [analytics?.weeklyTrend]
+  );
+  const revenueSeries = useMemo(
+    () =>
+      (analytics?.weeklyTrend || []).map((d) => ({
+        label: d.label,
+        value: Number(d.revenueCents) || 0,
+      })),
+    [analytics?.weeklyTrend]
   );
 
   const csvUrl = `${API}/api/vendor/reports/export?format=csv${from ? `&from=${encodeURIComponent(from)}` : ""}${to ? `&to=${encodeURIComponent(to)}` : ""}`;
@@ -97,6 +116,31 @@ export default function SalesInsightsPage() {
         <Kpi label="Revenue" value={money(analytics.totalRevenueCents)} />
         <Kpi label="Completed orders" value={analytics.completedOrders || 0} />
         <Kpi label="Estimated profit" value={money(analytics.estimatedProfitCents)} />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-gray-900">Weekly order trend</h2>
+          <p className="mt-1 text-xs text-gray-500">Orders per day for the last 7 days (excludes cancelled/rejected).</p>
+          <div className="mt-3">
+            <SimpleLineChart
+              series={orderSeries}
+              stroke="#4f46e5"
+              formatValue={(v) => `${v} order${v === 1 ? "" : "s"}`}
+            />
+          </div>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+          <h2 className="text-sm font-semibold text-gray-900">Weekly revenue trend</h2>
+          <p className="mt-1 text-xs text-gray-500">Your line-item revenue per day for the last 7 days.</p>
+          <div className="mt-3">
+            <SimpleLineChart
+              series={revenueSeries}
+              stroke="#059669"
+              formatValue={(cents) => money(cents)}
+            />
+          </div>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">

@@ -22,6 +22,7 @@ const ShippingSchema = new mongoose.Schema(
     postcode: { type: String, trim: true },
     country: { type: String, trim: true, default: "AU" },
     phone: { type: String, trim: true },
+    deliveryMethod: { type: String, enum: ["standard", "express"], default: "standard" },
   },
   { _id: false }
 );
@@ -91,7 +92,17 @@ const OrderSchema = new mongoose.Schema(
     },
     isNewForVendor: { type: Boolean, default: true, index: true },
     vendorDecisionAt: { type: Date, default: null },
+    /** Stock was decremented when the order was placed */
+    inventoryReserved: { type: Boolean, default: false },
+    /** Stock was returned after cancel / reject */
+    inventoryReleased: { type: Boolean, default: false },
     shipping: { type: ShippingSchema, default: {} },
+    shippingCents: { type: Number, default: 0, min: 0 },
+    paymentMethod: {
+      type: String,
+      enum: ["card", "paypal", "afterpay", "google_pay"],
+      default: "card",
+    },
     estimatedDelivery: { type: Date, default: null },
     notes: { type: String, default: "" },
     adminMeta: {

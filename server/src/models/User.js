@@ -105,6 +105,9 @@ const UserSchema = new mongoose.Schema(
     verifyCodeHash:     { type: String, select: false },
     verifyCodeExpires:  { type: Date,   select: false },
     lastVerifyEmailAt:  { type: Date,   select: false },
+
+    /** Customer inbox: last time notifications were marked read */
+    notificationsLastSeenAt: { type: Date, default: null },
   },
   {
     timestamps: true,

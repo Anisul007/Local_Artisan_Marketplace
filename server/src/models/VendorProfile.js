@@ -34,6 +34,9 @@ const VendorProfileSchema = new mongoose.Schema(
 
     // simple computed % for UI nudges
     completeness: { type: Number, default: 0 },
+
+    /** When the vendor last opened the notifications inbox (marks older items as read). */
+    notificationsLastSeenAt: { type: Date, default: null },
   },
   {
     timestamps: true,

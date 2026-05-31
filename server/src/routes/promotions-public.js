@@ -1,15 +1,18 @@
 // server/src/routes/promotions-public.js — validate coupon (no auth)
 import { Router } from "express";
 import mongoose from "mongoose";
-import Promotion from "../models/Promotion.js";
 import Listing from "../models/Listing.js";
+import {
+  findLiveCouponPromotion,
+  computeCartDiscountForPromo,
+  isPromotionApproved,
+} from "../utils/promotion-utils.js";
 
 const router = Router();
 
 /**
  * POST /api/promotions/validate
  * Body: { code: string, items: [{ listingId, quantity }] }
- * Returns: { ok, data: { valid, discountCents?, promotionName?, message? } }
  */
 router.post("/validate", async (req, res, next) => {
   try {
@@ -22,15 +25,8 @@ router.post("/validate", async (req, res, next) => {
       return res.json({ ok: true, data: { valid: false, message: "Cart is empty" } });
     }
 
-    const now = new Date();
-    const promo = await Promotion.findOne({
-      code: codeStr,
-      active: true,
-      startDate: { $lte: now },
-      endDate: { $gte: now },
-    }).lean();
-
-    if (!promo) {
+    const promo = await findLiveCouponPromotion(codeStr);
+    if (!promo || !isPromotionApproved(promo)) {
       return res.json({ ok: true, data: { valid: false, message: "Invalid or expired code" } });
     }
 
@@ -44,39 +40,36 @@ router.post("/validate", async (req, res, next) => {
       .lean();
     const listingMap = Object.fromEntries(listings.map((l) => [l._id.toString(), l]));
 
-    let applicableSubtotalCents = 0;
-    for (const row of items) {
-      const lid = (row.listingId || row.listing)?.toString?.();
-      const listing = listingMap[lid];
-      if (!listing || listing.vendor.toString() !== promo.vendor.toString()) continue;
-      const inScope = promo.listingIds.length === 0 || promo.listingIds.some((id) => id.toString() === lid);
-      if (!inScope) continue;
-      const qty = Math.max(1, Math.floor(Number(row.quantity)) || 1);
-      const priceCents = Number(listing.pricing?.priceCents) || 0;
-      applicableSubtotalCents += priceCents * qty;
-    }
+    const orderItems = items.map((row) => ({
+      listing: row.listingId || row.listing,
+      listingId: row.listingId || row.listing,
+      quantity: row.quantity,
+      priceCents: listingMap[(row.listingId || row.listing)?.toString?.() || ""]?.pricing?.priceCents,
+    }));
 
-    if (applicableSubtotalCents < (promo.minPurchaseCents || 0)) {
+    const result = computeCartDiscountForPromo(promo, orderItems, listingMap);
+    if (result.error) {
       const minDollars = ((promo.minPurchaseCents || 0) / 100).toFixed(2);
       return res.json({
         ok: true,
-        data: { valid: false, message: `Minimum purchase for this code is $${minDollars}` },
+        data: {
+          valid: false,
+          message: result.error === "Minimum purchase not met" ? `Minimum purchase for this code is $${minDollars}` : result.error,
+        },
       });
     }
-
-    let discountCents = 0;
-    if (promo.type === "percentage") {
-      discountCents = Math.round((applicableSubtotalCents * promo.value) / 100);
-    } else {
-      discountCents = Math.min(promo.value, applicableSubtotalCents);
+    if (result.discountCents <= 0) {
+      return res.json({
+        ok: true,
+        data: { valid: false, message: "This code does not apply to any items in your cart" },
+      });
     }
-    discountCents = Math.max(0, discountCents);
 
     return res.json({
       ok: true,
       data: {
         valid: true,
-        discountCents,
+        discountCents: result.discountCents,
         promotionName: promo.name,
         promotionId: promo._id,
       },

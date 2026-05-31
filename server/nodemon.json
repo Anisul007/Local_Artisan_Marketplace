@@ -1,0 +1,13 @@
+{
+  "watch": ["src"],
+  "ext": "js,json",
+  "ignore": [
+    "Public/uploads/**",
+    "node_modules/**",
+    ".mail-previews/**",
+    "**/*.png",
+    "**/*.jpg",
+    "**/*.webp"
+  ],
+  "delay": 1500
+}
